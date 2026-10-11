@@ -1,0 +1,38 @@
+[package]
+name = "wireboard"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+description = "Local browser whiteboard with a shared, revision-checked agent API"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+clap = { version = "4", features = ["derive"] }
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+resvg = "0.48"
+atomic-write-file = "0.3"
+fs2 = "0.4"
+uuid = { version = "1", features = ["v4"] }
+rust-embed = "8"
+mime_guess = "2"
+webbrowser = "1"
+tempfile = "3"
+ttf-parser = "0.25"
+futures-util = "0.3"
+sha2 = "0.10"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+[profile.release]
+lto = "thin"
+strip = true

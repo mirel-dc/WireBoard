@@ -1,0 +1,51 @@
+name: Native Wireboard builds
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2022
+            platform: windows-x86_64
+            binary: target/release/wireboard.exe
+            targetArgs: ''
+          - runner: ubuntu-22.04
+            platform: linux-x86_64
+            binary: target/x86_64-unknown-linux-musl/release/wireboard
+            targetArgs: '--target x86_64-unknown-linux-musl'
+          - runner: macos-15
+            platform: macos-arm64
+            binary: target/release/wireboard
+            targetArgs: ''
+          - runner: macos-15-intel
+            platform: macos-x86_64
+            binary: target/release/wireboard
+            targetArgs: ''
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install Rust stable
+        shell: bash
+        run: rustup update stable && rustup default stable && rustup component add clippy rustfmt
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: cargo test --locked
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - if: matrix.platform == 'linux-x86_64'
+        run: rustup target add x86_64-unknown-linux-musl
+      - run: cargo build --release --locked ${{ matrix.targetArgs }}
+      - run: node scripts/smoke.mjs ${{ matrix.binary }}
+      - run: node scripts/package.mjs ${{ matrix.platform }} ${{ matrix.binary }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wireboard-${{ matrix.platform }}
+          path: dist/${{ matrix.platform }}/

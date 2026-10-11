@@ -1,0 +1,14 @@
+{
+  "operations":[
+    {"op":"create","element":{"kind":"rectangle","x":100,"y":100,"width":180,"height":140,"title":"Шлюз","text":"Проверить запрос и отправить ответ агенту"}},
+    {"op":"create","element":{"kind":"rectangle","x":480,"y":130,"width":200,"height":100,"text":"Model"}},
+    {"op":"create","element":{"kind":"connector","from":1,"to":2,"text":"HTTP запрос"}}
+  ],
+  "scene":{
+    "elements":[
+      {"id":1,"bounds":{"x":100.0,"y":100.0,"width":180.0,"height":140.0},"title":[{"text":"Шлюз","x":190.0,"y":139.9,"size":20.0,"weight":600}],"body":[{"text":"Проверить запрос","x":190.0,"y":168.9,"size":16.0,"weight":400},{"text":"и отправить ответ","x":190.0,"y":191.3,"size":16.0,"weight":400},{"text":"агенту","x":190.0,"y":213.70000000000002,"size":16.0,"weight":400}],"fitHeight":132.2,"overflow":false},
+      {"id":2,"bounds":{"x":480.0,"y":130.0,"width":200.0,"height":100.0},"title":[],"body":[{"text":"Model","x":580.0,"y":184.8,"size":16.0,"weight":400}],"fitHeight":54.4,"overflow":false}
+    ],
+    "connectors":[{"id":3,"points":[{"x":280.0,"y":170.0},{"x":380.0,"y":170.0},{"x":380.0,"y":180.0},{"x":480.0,"y":180.0}],"captionBounds":{"x":321.16,"y":132.6,"width":117.67999999999999,"height":34.4},"caption":[{"text":"HTTP запрос","x":380.0,"y":154.6,"size":16.0,"weight":400}]}]
+  }
+}

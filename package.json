@@ -1,0 +1,18 @@
+{
+  "name": "wireboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build --config frontend/vite.config.ts",
+    "typecheck": "tsc --noEmit -p frontend/tsconfig.json",
+    "test": "playwright test",
+    "test:e2e": "playwright test",
+    "release": "npm run build && cargo build --release"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.3.0"
+  }
+}

@@ -1,0 +1,40 @@
+name: wireboard
+
+services:
+  wireboard:
+    build: .
+    image: wireboard:local
+    init: true
+    user: ${WIREBOARD_UID:-10001}:${WIREBOARD_GID:-10001}
+    command:
+      - serve
+      - --listen
+      - 0.0.0.0
+      - --port
+      - "9843"
+      - --public-origin
+      - http://127.0.0.1:${WIREBOARD_PORT:-9843}
+      - --data-dir
+      - /data
+    ports:
+      - "127.0.0.1:${WIREBOARD_PORT:-9843}:9843"
+    volumes:
+      - ${WIREBOARD_DATA_DIR:?Run just up or set WIREBOARD_DATA_DIR to your absolute local library folder}:/data
+    environment:
+      WIREBOARD_LIBRARY_PATH: ${WIREBOARD_DATA_DIR}
+    healthcheck:
+      test: ["CMD-SHELL", "wireboard --data-dir /data boards >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      start_period: 5s
+      retries: 12
+    stop_grace_period: 15s
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+

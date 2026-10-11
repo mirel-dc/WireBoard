@@ -1,0 +1,6 @@
+[
+  {"op":"create","element":{"id":1,"kind":"frame","x":0,"y":0,"width":960,"height":540,"text":"Пользователь и агент","fill":"#ffffff"}},
+  {"op":"create","element":{"id":2,"kind":"rectangle","x":100,"y":170,"width":280,"height":150,"text":"Пользователь\nРедактирует в браузере","fill":"#e7efda"}},
+  {"op":"create","element":{"id":3,"kind":"rectangle","x":580,"y":170,"width":280,"height":150,"text":"Codex\nИзменяет через CLI","fill":"#e4eee9"}},
+  {"op":"create","element":{"id":4,"kind":"connector","from":2,"to":3,"text":"Одна доска"}}
+]
