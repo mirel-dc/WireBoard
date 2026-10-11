@@ -19,3 +19,17 @@
 - Ревью реализации и TypeScript: существенные замечания устранены, включая видимость поля в длинной ветке и сохранение scroll списка.
 
 Git не инициализировался. Исходные изменяемые файлы сохранены в `work/comment-popover-before/`. Параллельные изменения других задач не откатывались.
+
+## Скрытие меток комментариев
+
+По следующему сообщению пользователя исправлены метки, мешавшие чтению блоков:
+
+- Решённые обсуждения не имеют меток на холсте, даже пока выбраны или открыты через фильтр «Решённые».
+- В общем списке добавлены «Скрыть метки на схеме» / «Показать метки на схеме». Выбор сохраняется в localStorage текущего браузера. Скрытие не меняет revision, сообщения или другие данные доски; обновления SSE не возвращают скрытые метки.
+- После смены статуса фокус возвращается в поле ответа, если окно ещё открыто на исходной доске. Escape закрывает его и после исчезновения метки.
+
+Проверки: TypeScript и Vite PASS, все 63 теста `e2e/comment-popover.spec.ts` и `e2e/comments.spec.ts` PASS в Chromium, Firefox, WebKit. Журнал: `work/comment-pin-visibility-final-tests.log`. Исходный дефект и потеря фокуса воспроизведены до правок (`work/comment-pin-visibility-red.log`, `work/comment-pin-focus-red.log`). TypeScript-ревью и общее ревью без существенных замечаний. Снимки исходников: `work/comment-pin-visibility-before/`.
+
+Первый `just up` завершился ошибкой отсутствующего `dockerDesktopLinuxEngine` (`work/comment-pin-visibility-final-up.log`). При запуске Docker Desktop backend сообщил об ошибке служебного сокета `%LOCALAPPDATA%/Docker/run/dockerInference`. Попытка переименования не удалась; автоматическая проверка запретила удаление файла (`blocked by policy`). Удаление не выполнялось. Обычный `docker desktop start` затем завершился успешно, Docker API ответил версией 29.1.2. Настройки Docker и хранилище досок не менялись. Повторная доставка через `just up`: `work/comment-pin-visibility-delivery.log`. Финальная локальная сборка: `frontend/dist/assets/index-DC31l24J.js`, `index-CDhNpaXc.css`.
+
+Повторная доставка завершена успешно: `just up` exit 0, `wireboard-wireboard-1` healthy на `127.0.0.1:9843`. Рабочий сервер отдаёт `/assets/index-DC31l24J.js`, SHA256 совпадает с локальной сборкой (`work/comment-pin-visibility-delivery-proof.json`). Правка доступна после обновления страницы браузера.

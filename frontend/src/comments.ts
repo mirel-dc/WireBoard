@@ -11,6 +11,8 @@ export class Comments {
   private panel = document.getElementById('comments')!;
   private content = document.getElementById('comment-content')!;
   private layer = document.getElementById('comment-pins')!;
+  private pinsToggle = document.getElementById('comment-pins-toggle')!;
+  private pinsVisible = true;
   private drafts = new Map<string, Draft>();
   private selections = new Map<string, number | 'new'>();
   private filters = new Set<CommentStatus>(['open', 'awaiting_review']);
@@ -23,6 +25,12 @@ export class Comments {
   get isSending(){return this.sending;}
   cancelAnchor(){this.reanchoring=null;}
   constructor(private view: CanvasView, private cb: Callbacks) {
+    try { this.pinsVisible = localStorage.getItem('wireboard:comment-pins') !== 'hidden'; } catch { /* View preferences are optional. */ }
+    this.pinsToggle.onclick = () => {
+      this.pinsVisible = !this.pinsVisible;
+      try { localStorage.setItem('wireboard:comment-pins', this.pinsVisible ? 'visible' : 'hidden'); } catch { /* View preferences are optional. */ }
+      this.renderPins();
+    };
     document.getElementById('comments-open')!.onclick = () => this.toggle();
     document.getElementById('comments-close')!.onclick = () => this.close();
     document.querySelectorAll<HTMLButtonElement>('[data-comment-filter]').forEach(button => button.onclick = () => { const s = button.dataset.commentFilter as CommentStatus; if (this.filters.has(s)) this.filters.delete(s); else this.filters.add(s); button.setAttribute('aria-pressed', String(this.filters.has(s))); this.render(); });
@@ -127,10 +135,11 @@ export class Comments {
     return {x:thread?.anchorSnapshot?.worldX??0,y:thread?.anchorSnapshot?.worldY??0};
   }
   renderPins() {
+    this.pinsToggle.textContent = this.pinsVisible ? 'Скрыть метки на схеме' : 'Показать метки на схеме';
     const active=document.activeElement as HTMLElement|null;const focusedPin=active?.closest('.comment-pin')?.getAttribute('data-thread');
-    this.layer.replaceChildren(); const board = this.cb.current(); if (!board) return;
+    this.layer.replaceChildren(); const board = this.cb.current(); if (!board || !this.pinsVisible) { this.position(); return; }
     const placed: { x: number; y: number }[] = [];
-    for (const thread of board.comments.filter(c => this.filters.has(c.status) || this.selection === c.id).sort((a,b)=>Number(b.id===this.selection)-Number(a.id===this.selection)||a.id-b.id)) {
+    for (const thread of board.comments.filter(c => c.status !== 'resolved' && (this.filters.has(c.status) || this.selection === c.id)).sort((a,b)=>Number(b.id===this.selection)-Number(a.id===this.selection)||a.id-b.id)) {
       const p=this.anchorPoint(thread.anchor,thread);
       const origin = { x: this.view.camera.x + p.x * this.view.camera.zoom, y: this.view.camera.y + p.y * this.view.camera.zoom }; let x = origin.x, y = origin.y;
       while (placed.some(p => Math.hypot(p.x - x, p.y - y) < 44)) { x += 44; }
@@ -154,6 +163,7 @@ export class Comments {
     const historyScrollTop = this.content.querySelector('.comment-messages')?.scrollTop ?? 0;
     this.content.replaceChildren(); this.renderPins(); const board = this.cb.current(); if (!board) return;
     const selection = this.selection;
+    this.pinsToggle.hidden = selection !== undefined;
     document.querySelector<HTMLElement>('#comments .comment-filters')!.hidden = selection !== undefined;
     document.getElementById('comments-heading')!.textContent = selection === undefined ? 'Комментарии' : selection === 'new' ? 'Новый комментарий' : `Комментарий #${selection}`;
     this.panel.dataset.mode = selection === undefined ? 'list' : selection === 'new' ? 'new' : 'thread';
@@ -190,7 +200,17 @@ export class Comments {
     this.position();
     if (restoreInput && !input.disabled) { this.focusComposer(); input.setSelectionRange(start,end); }
   }
-  private async status(thread: CommentThread, status: 'open' | 'resolved') { const board = this.cb.current(); if (!board || this.sending) return; this.sending = true; try { await this.cb.commit(board.id,[{ op: 'comment_status', author: 'user', threadId: thread.id, status }], board.revision); } catch (error) { this.cb.report(error); } finally { this.sending = false; this.render(); } }
+  private async status(thread: CommentThread, status: 'open' | 'resolved') {
+    const board = this.cb.current(); if (!board || this.sending) return;
+    const restoreFocus = this.panel.contains(document.activeElement);
+    this.sending = true;
+    try { await this.cb.commit(board.id,[{ op: 'comment_status', author: 'user', threadId: thread.id, status }], board.revision); }
+    catch (error) { this.cb.report(error); }
+    finally {
+      this.sending = false; this.render();
+      if (restoreFocus && !this.panel.hidden && this.cb.current()?.id === board.id) this.focusComposer();
+    }
+  }
   private async send(selection: number | 'new', retry: boolean) {
     const board = this.cb.current(); if (!board || this.sending) return; const draft = this.draft(selection); const text = draft.text;const draftKey=`${board.id}:${selection}`;
     if (!text.trim()) { draft.notice = 'Напишите комментарий.'; this.render(); return; }

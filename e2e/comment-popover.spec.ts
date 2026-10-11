@@ -20,6 +20,62 @@ async function geometry(page: Page) {
   });
 }
 
+test('resolved discussion never leaves a pin even while selected or shown in the archive', async ({ page }) => {
+  const id = await create(page);
+  await page.request.post(`/api/boards/${id}/apply`, { headers: { Origin: 'http://127.0.0.1:19843' },
+    data: { revision: 0, operations: [{ op: 'comment_create', author: 'user', text: 'Завершённая задача', anchor: { type: 'point', x: 400, y: 170 } }] } });
+  await expect(page.locator('.comment-pin')).toHaveCount(1);
+  const before = await geometry(page);
+  await page.locator('.comment-pin').click();
+  await page.getByRole('button', { name: 'Отметить решённым', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Открыть снова', exact: true })).toBeVisible();
+  await expect(page.locator('.comment-pin')).toHaveCount(0);
+  await expect(page.getByLabel('Ответ', { exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#comments')).toBeHidden();
+  await expect(page.locator('.comment-pin')).toHaveCount(0);
+  await page.locator('#comments-open').click();
+  await page.locator('[data-comment-filter="resolved"]').click();
+  await page.locator('.thread-row').filter({ hasText: 'Завершённая задача' }).click();
+  await expect(page.getByLabel('Ответ', { exact: true })).toBeFocused();
+  await expect(page.locator('.comment-pin')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Открыть снова', exact: true }).click();
+  await expect(page.locator('.comment-pin.open')).toHaveCount(1);
+  expect(await geometry(page)).toEqual(before);
+});
+
+test('all pins can be hidden persistently while discussions stay accessible', async ({ page }) => {
+  const id = await create(page);
+  await page.request.post(`/api/boards/${id}/apply`, { headers: { Origin: 'http://127.0.0.1:19843' },
+    data: { revision: 0, operations: [
+      { op: 'comment_create', author: 'user', text: 'Первая задача', anchor: { type: 'point', x: 400, y: 170 } },
+      { op: 'comment_create', author: 'user', text: 'Вторая задача', anchor: { type: 'point', x: 450, y: 220 } },
+    ] } });
+  await expect(page.locator('.comment-pin')).toHaveCount(2);
+  const before = await geometry(page);
+  const boardBefore = await (await page.request.get(`/api/boards/${id}`)).json();
+  await page.locator('#comments-open').click();
+  await page.getByRole('button', { name: 'Скрыть метки на схеме', exact: true }).click();
+  await expect(page.locator('.comment-pin')).toHaveCount(0);
+  await expect(page.locator('.thread-row')).toHaveCount(2);
+  await page.locator('.thread-row').filter({ hasText: 'Первая задача' }).click();
+  await expect(page.getByLabel('Ответ', { exact: true })).toBeFocused();
+  await expect(page.locator('.comment-pin')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  expect(await geometry(page)).toEqual(before);
+  expect(await (await page.request.get(`/api/boards/${id}`)).json()).toEqual(boardBefore);
+  await page.reload();
+  await expect(page.locator('#comments-count')).toHaveText('2');
+  await expect(page.locator('.comment-pin')).toHaveCount(0);
+  await page.request.post(`/api/boards/${id}/apply`, { headers: { Origin: 'http://127.0.0.1:19843' },
+    data: { revision: 1, operations: [{ op: 'rename', title: 'Обновление при скрытых метках' }] } });
+  await expect(page.locator('#board-title')).toHaveText('Обновление при скрытых метках');
+  await expect(page.locator('.comment-pin')).toHaveCount(0);
+  await page.locator('#comments-open').click();
+  await page.getByRole('button', { name: 'Показать метки на схеме', exact: true }).click();
+  await expect(page.locator('.comment-pin')).toHaveCount(2);
+});
+
 test('new comment opens beside click without moving canvas and focuses input', async ({ page }) => {
   const id = await create(page);
   await page.request.post(`/api/boards/${id}/apply`, { headers: { Origin: 'http://127.0.0.1:19843' },

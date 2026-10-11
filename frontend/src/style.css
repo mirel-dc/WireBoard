@@ -98,6 +98,7 @@ p { line-height: 1.55; overflow-wrap: anywhere; }
 #comments .panel-heading { flex: none; margin-block-end: 8px; }
 #comments .panel-heading h2 { font-size: 15px; margin: 0; }
 #comments-close { padding: 0; inline-size: 44px; font-size: 24px; }
+.comment-visibility { flex: none; align-self: start; font-size: 12px; margin-block-end: 8px; }
 .comment-filters { display: flex; flex-wrap: wrap; gap: 2px; border-block-end: 1px solid var(--line); padding-block-end: 12px; }
 .comment-filters button { font-size: 12px; padding-inline: 8px; }
 #comment-content { min-block-size: 0; padding: 2px 4px 4px; overflow-y: auto; overscroll-behavior: contain; }
