@@ -1,10 +1,10 @@
 # Wireboard
 
-Локальный редактор схем и слайдов: Rust-сервер, браузерный SVG-холст, управление из Codex через CLI. Русский интерфейс, встроенный шрифт, автосохранение. Для запуска готового бинарника не нужны Node.js, Vite и подключение к интернету.
+A local diagram and slide editor with a Rust server, a browser-based SVG canvas, and a CLI for Codex. It includes a bundled font and autosave. The UI is currently in Russian; button names below are English translations. Running a packaged binary does not require Node.js, Vite, or an internet connection.
 
-## Запуск
+## Getting started
 
-Основной запуск из исходников — Docker Compose и [just](https://just.systems/man/en/): Docker Desktop на Windows/macOS или Docker Engine с Compose на Linux, just 1.58+. Docker должен работать в режиме Linux containers. Rust и Node.js на компьютере для этого запуска не нужны.
+The main way to run Wireboard from source is with Docker Compose and [just](https://just.systems/man/en/): Docker Desktop on Windows/macOS or Docker Engine with Compose on Linux, plus just 1.58 or later. Docker must use Linux containers. You do not need Rust or Node.js on the host for this setup.
 
 ```sh
 cd /path/to/Wireboard
@@ -12,46 +12,46 @@ just up
 just open
 ```
 
-В PowerShell каталог проекта: `cd F:\SOFT\Wireboard`. Первый `just up` скачивает образы и собирает приложение; последующие используют кеш. Он ждёт готовности сервера. `just open` открывает системный браузер. Можно просто открыть `http://localhost:9843/` или сохранить адрес `/b/<slug>` нужной доски в закладках: вход и одноразовые ссылки не требуются. Приложение доступно только на `127.0.0.1:9843`; на Linux для открытия нужен `xdg-open` и браузер по умолчанию. На Mac контейнер собирается для архитектуры Docker, включая Apple Silicon.
+In PowerShell, use `cd F:\SOFT\Wireboard` for this checkout. The first `just up` downloads images and builds the application; later runs use the cache. It waits for the server to become ready. `just open` opens your default browser. You can also open `http://localhost:9843/` directly or bookmark a board at `/b/<slug>`: login and one-time links are not required. The application listens only on `127.0.0.1:9843`. On Linux, opening the browser requires `xdg-open` and a configured default browser. On macOS, the container builds for Docker's architecture, including Apple Silicon.
 
-`just ps` — статус, `just logs` — журнал, `just restart` — перезапуск, `just down` — остановка. Доски сохраняются в обычном каталоге компьютера; `down` его оставляет. `just` выбирает тот же каталог, что native: `%LOCALAPPDATA%\Wireboard` на Windows, `~/Library/Application Support/Wireboard` на macOS и `$XDG_DATA_HOME/wireboard` (или `~/.local/share/wireboard`) на Linux. `WIREBOARD_DATA_DIR` задаёт другой абсолютный путь для обоих запусков. На Linux `just` также запускает контейнер с UID/GID текущего пользователя. Для прямого `docker compose` задайте `WIREBOARD_DATA_DIR`, а на Linux также `WIREBOARD_UID`/`WIREBOARD_GID` в `.env` или окружении. Контейнер автоматически возвращается после перезапуска Docker, пока ты не остановил его. Чтобы изменить порт, скопируй `.env.example` в `.env`, измени `WIREBOARD_PORT`, затем выполни `just up` и `just open`. Например, 9844 подходит при одновременно работающем native сервере. Runtime работает от отдельного пользователя без root; frontend встроен в Rust binary. Сборка использует [multi-stage Dockerfile](https://docs.docker.com/build/building/multi-stage/).
+Use `just ps` to check status, `just logs` to read logs, `just restart` to restart, and `just down` to stop. Boards live in a regular directory on your computer, which `down` preserves. `just` selects the same directory as the native binary: `%LOCALAPPDATA%\Wireboard` on Windows, `~/Library/Application Support/Wireboard` on macOS, and `$XDG_DATA_HOME/wireboard` (or `~/.local/share/wireboard`) on Linux. Set `WIREBOARD_DATA_DIR` to use another absolute path for either setup. On Linux, `just` also runs the container with your user's UID/GID. When using `docker compose` directly, set `WIREBOARD_DATA_DIR` and, on Linux, `WIREBOARD_UID`/`WIREBOARD_GID` in `.env` or your environment. The container starts again when Docker restarts unless you have stopped it. To change the port, copy `.env.example` to `.env`, set `WIREBOARD_PORT`, then run `just up` and `just open`. For example, port 9844 can coexist with a native server. The runtime uses a dedicated non-root user, and the frontend is embedded in the Rust binary. The build uses a [multi-stage Dockerfile](https://docs.docker.com/build/building/multi-stage/).
 
-Docker и native используют одну локальную библиотеку, если выбран один каталог. Переключайте способ запуска после остановки предыдущего сервера. При переходе со старого Docker-тома сохраняйте документы целиком по инструкции ниже; для перехода между разными библиотеками можно экспортировать и импортировать JSON как новую доску.
+Docker and native builds share a local library when they use the same directory. Stop the current server before switching between them. When migrating from an older Docker volume, preserve complete documents as described below. To move between separate libraries, export and import JSON as a new board.
 
-### Без Docker
+### Running without Docker
 
-Windows: открой `dist/windows-x86_64/launch.cmd` или выполни из корня проекта `./launch.cmd`. macOS/Linux: `chmod +x launch.sh wireboard`, затем `./launch.sh` из распакованного комплекта. Сервер запускается в терминале и открывает системный браузер. Ctrl+C завершает сервер; закрытие вкладки его не останавливает. Если сервер уже работает, открой новую сессию командой `wireboard open` (`wireboard.exe open` на Windows).
+On Windows, open `dist/windows-x86_64/launch.cmd` or run `./launch.cmd` from the project root. On macOS/Linux, run `chmod +x launch.sh wireboard`, then `./launch.sh` from the unpacked bundle. The server runs in the terminal and opens your default browser. Ctrl+C stops the server; closing the browser tab does not. If the server is already running, open another session with `wireboard open` (`wireboard.exe open` on Windows).
 
-Для нестандартного порта/каталога: `./launch.cmd --port 9844 --data-dir "D:\My Boards"` или `./launch.sh --port 9844 --data-dir "$HOME/My Boards"`. При работе CLI используй тот же `--data-dir`; порт CLI найдёт в защищённом runtime-файле. Один каталог обслуживается только одним сервером. Автозагрузка не устанавливается.
+For a custom port or data directory, use `./launch.cmd --port 9844 --data-dir "D:\My Boards"` or `./launch.sh --port 9844 --data-dir "$HOME/My Boards"`. Use the same `--data-dir` with the CLI; it reads the port from the protected runtime file. Only one server can serve a directory at a time. The application does not install a startup service.
 
-Редактор открывается по обычному локальному адресу без аккаунта, токенов в ссылках и browser cookie. CLI использует приватный runtime-файл своего каталога, чтобы отличать нужный сервер от другого на том же порту. Host, Origin и Fetch Metadata запрещают запросы с посторонних сайтов; Docker публикует порт только на loopback. Не публикуйте runtime-файл.
+The editor opens at a regular local URL without an account, tokens in links, or browser cookies. The CLI uses the private runtime file in its data directory to distinguish the intended server from another server on the same port. Host, Origin, and Fetch Metadata checks reject requests from other websites; Docker publishes the port only on loopback. Do not publish the runtime file.
 
-На macOS неподписанный локальный бинарник может требовать явного разрешения в «Системные настройки → Конфиденциальность и безопасность». Приложение не подписано и не нотарифицировано. Бинарники для macOS нужно собрать на соответствующем Mac; готовых проверенных Mac-сборок в этом комплекте пока нет.
+On macOS, an unsigned local binary may need explicit approval in System Settings > Privacy & Security. The application is neither signed nor notarized. Build macOS binaries on the corresponding Mac; this bundle does not yet include verified Mac builds.
 
-## Редактор
+## Editor
 
-Визуальный стиль C: пастельные карточки с отдельными заголовком и описанием, компактные инструменты и видимая слева локальная библиотека досок/слайдов. Поиск фильтрует названия; выбранная доска записывается в адрес `/b/<slug>`, который открывает её в любом браузере. Обычный корневой адрес показывает библиотеку без случайного выбора доски; отсутствующая доска в ссылке явно обозначается. Контекстная панель появляется при выделении; «Свойства» открывает точные настройки. Двойной щелчок открывает редактор у объекта: Enter добавляет строку, Ctrl/Cmd+Enter сохраняет, Escape отменяет. Длинный текст показывает многоточие; «Подогнать высоту» раскрывает описание без изменения исходного текста. Старые `/?board=<id>` остаются совместимыми и переходят на читаемый адрес.
+Visual style C uses pastel cards with separate titles and descriptions, compact tools, and a local board/slide library on the left. Search filters titles. The selected board appears at `/b/<slug>`, which opens that board in any browser. The root URL shows the library without selecting an arbitrary board; a link to a missing board displays an explicit message. A contextual toolbar appears when you select an object; 'Properties' opens precise settings. Double-click opens an editor beside the object: Enter inserts a line, Ctrl/Cmd+Enter saves, and Escape cancels. Long text is truncated with an ellipsis; 'Fit height' reveals the description without changing the source text. Legacy `/?board=<id>` links remain compatible and redirect to the readable URL.
 
-После доработки 10 октября новая карточка — 220×112, с отступом 16, небольшими углами и центрированным текстом. Голубой, жёлтый, мятный и сиреневый пресеты обозначают разные роли. Подписи связей используют заданный размер шрифта и размещаются в свободном месте рядом с маршрутом, учитывая границы слайда. В стартовой схеме блоки 200×96 с увеличенными промежутками для подписей. Старые доски не перекрашиваются автоматически; стартовая схема в текущем проекте переоформлена отдельно с резервной копией и возможностью Undo.
+Following the October 10 refinement, new cards measure 220 by 112 board units, with 16 units of padding, slightly rounded corners, and centered text. Blue, yellow, mint, and lilac presets represent different roles. Connector labels use the configured font size and sit in available space near the route, taking slide boundaries into account. The starter diagram uses 200 by 96 blocks with wider gaps for labels. Existing boards are not recolored automatically; the starter diagram in the current project was restyled separately, with a backup and Undo support.
 
-Клавиша C или кнопка «Комментарий» привязывает обсуждение к блоку, стрелке или точке холста. Компактное окно открывается рядом с местом щелчка, поле сразу получает фокус; Ctrl/Cmd+Enter отправляет сообщение. Щелчок по метке открывает обсуждение и фокусирует ответ. Открытие и закрытие окна сохраняют положение и масштаб холста; перейти к привязке можно кнопкой «Показать на схеме». Кнопка «Комментарии» открывает общий список под собой: открытые и ожидающие проверки ветки, решённые включаются фильтром. Escape и щелчок вне окна закрывают его с сохранением черновика. Комментарии сохраняются с доской, следуют за объектами, а при удалении остаются с последним снимком. Черновики ответов сохраняются в текущей вкладке при переключении досок. Агент работает по вашей команде «разбери открытые комментарии»; инструкцию для Codex/Claude см. [здесь](docs/agents/wireboard-comments.md).
+Press C or click 'Comment' to attach a discussion to a block, arrow, or canvas point. A compact popover opens beside the click and focuses the input immediately; Ctrl/Cmd+Enter sends the message. Clicking a marker opens the thread and focuses the reply field. Opening and closing the popover preserves the canvas position and zoom; 'Show on diagram' navigates to its anchor. 'Comments' opens the full list below the button: open threads and threads awaiting review appear by default, with resolved threads available through a filter. Escape or a click outside the popover closes it while preserving the draft. Comments are saved with the board and follow their objects; after an object is deleted, they retain its last snapshot. Reply drafts stay in the current tab when switching boards. The agent acts when you ask it to 'review open comments'; see the [Codex/Claude instructions](docs/agents/wireboard-comments.md).
 
-Блоки, текст, стрелки с подписями, свободные фреймы и растровые изображения. Выделение рамкой, Shift для нескольких объектов, перемещение, восемь ручек размера, дублирование, выравнивание и цвета в панели свойств. Двойной щелчок или Enter редактирует текст. Фрейм переносится со связанными потомками; дублирование переносит внутренние стрелки. Пресет «Слайд 16:9» доступен в свойствах фрейма.
+The editor supports blocks, text, labeled arrows, frames of any size, and raster images. Use a selection rectangle, Shift to select multiple objects, movement, eight resize handles, duplication, alignment, and colors in the properties panel. Double-click or Enter edits text. Moving a frame also moves its assigned descendants; duplication includes internal arrows. The '16:9 slide' preset is available in frame properties.
 
-V — выделение, H — рука, R — блок, T — текст, L — связь (выбрать два блока), F — фрейм. R/T/F: протяните для своего размера или щёлкните для стандартного; Shift при создании даёт квадрат. Space+перетаскивание панорамирует; колесо и прокрутка двумя пальцами двигают холст, Ctrl/Cmd+колесо или pinch масштабируют около курсора. Shift+вертикальное колесо двигает горизонтально. Стрелки сдвигают выделение на 1 единицу доски, Shift+стрелки — на 10. Ctrl/Cmd+A выделяет, Ctrl/Cmd+C копирует, Ctrl/Cmd+V вставляет, Ctrl/Cmd+D дублирует, Delete удаляет, Ctrl/Cmd+Z отменяет, Ctrl/Cmd+Shift+Z или Ctrl/Cmd+Y повторяет. Ctrl на Windows/Linux, Cmd на macOS. Физические клавиши работают в RU/EN. В полях ввода действуют обычные сочетания. Презентация: стрелки для перехода, Escape для выхода.
+V selects, H activates the hand tool, R creates a block, T creates text, L connects two selected blocks, and F creates a frame. With R/T/F, drag to choose a size or click for the default; hold Shift during creation for a square. Space+drag pans the canvas. The mouse wheel and two-finger scrolling pan; Ctrl/Cmd+wheel or pinch zooms around the pointer. Shift+vertical wheel scrolls horizontally. Arrow keys move the selection by 1 board unit, or 10 with Shift. Ctrl/Cmd+A selects all, Ctrl/Cmd+C copies, Ctrl/Cmd+V pastes, Ctrl/Cmd+D duplicates, Delete removes, Ctrl/Cmd+Z undoes, and Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redoes. Use Ctrl on Windows/Linux and Cmd on macOS. Physical key shortcuts work with both Russian and English keyboard layouts. Input fields keep their usual shortcuts. In presentation mode, arrow keys navigate and Escape exits.
 
-Изображение можно вставить из буфера или выбрать файл (PNG/JPEG/WebP). JSON экспорт/импорт переносит доску целиком со встроенными изображениями. SVG и PNG экспортируют доску или выбранный слайд. SVG-файлы не принимаются как изображения. Изменения CLI появляются в браузере через SSE. При конфликте затронутых свойств действие остаётся в черновике: можно посмотреть изменения и отменить несохранённое действие. Текстовый черновик сохраняется до явного решения пользователя.
+Paste an image from the clipboard or choose a file (PNG/JPEG/WebP). JSON export/import transfers the entire board with embedded images. SVG and PNG export either the board or a selected slide. SVG files cannot be imported as images. CLI changes appear in the browser through SSE. If affected properties conflict, the action stays as a draft: you can inspect the changes and discard the unsaved action. Text drafts remain until you explicitly decide what to do with them.
 
-## Codex и CLI
+## Codex and the CLI
 
-Проектные `AGENTS.md` и `CLAUDE.md` направляют агентов к общей инструкции комментариев; глобальные настройки не меняются. Проектный skill находится в `skills/wireboard/SKILL.md`. Он подготовлен, но не установлен глобально. Можно попросить Codex прочитать его прямо из проекта.
+The project's `AGENTS.md` and `CLAUDE.md` direct agents to the shared comment instructions; global settings are not changed. The project skill lives at `skills/wireboard/SKILL.md`. It is ready to use but is not installed globally. You can ask Codex to read it directly from the project.
 
-Для Compose команды выполняются из корня проекта через `just cli`. Пути входных/выходных файлов CLI находятся **в контейнере**; `upload` и `download` переносят файлы между ним и компьютером:
+With Compose, run commands from the project root through `just cli`. CLI input/output paths are **inside the container**; `upload` and `download` transfer files between the container and your computer:
 
 ```sh
 just cli boards
-just cli create --title "Пользователь и агент"
-# Возьми BOARD_ID и revision из ответа create/inspect.
+just cli create --title "User and agent"
+# Read BOARD_ID and revision from the create/inspect response.
 just upload examples/agent-slide.json /data/operations.json
 just cli apply BOARD_ID --revision 0 --file /data/operations.json
 just cli render BOARD_ID --frame 1 --output /data/slide.png
@@ -60,47 +60,47 @@ just cli export BOARD_ID --output /data/board.json
 just download /data/board.json ./board.json
 ```
 
-Для `upload/download` используй writable volume `/data`: файлы операций и экспорта в нём тоже сохраняются после `down`. Не используй имена `runtime.json`, `.lock` или каталог `boards` для передачи файлов. `/tmp` — tmpfs; [Docker cp ограничивает копирование таких ресурсов](https://docs.docker.com/reference/cli/docker/container/cp/#corner-cases). Эти команды подходят PowerShell и POSIX shell; аргументы с пробелами заключай в кавычки. `just open` сохраняет приватную ссылку только в памяти helper-процесса; не публикуй вывод `open --print-url`.
+Use the writable `/data` volume for `upload/download`: operation and export files there also survive `down`. Do not use the names `runtime.json`, `.lock`, or the `boards` directory for file transfers. `/tmp` is a tmpfs; [Docker cp has restrictions on copying these resources](https://docs.docker.com/reference/cli/docker/container/cp/#corner-cases). These commands work in PowerShell and POSIX shells; quote arguments containing spaces. `just open` keeps the private link only in the helper process's memory; do not publish the output of `open --print-url`.
 
-Пример PowerShell — сервер уже запущен:
+PowerShell example with the server already running:
 
 ```powershell
 $wireboard = 'F:\SOFT\Wireboard\dist\windows-x86_64\wireboard.exe'
 & $wireboard boards
-$board = (& $wireboard create --title 'Пользователь и агент' | ConvertFrom-Json)
+$board = (& $wireboard create --title 'User and agent' | ConvertFrom-Json)
 & $wireboard inspect $board.id
 & $wireboard apply $board.id --revision $board.revision --file 'F:\SOFT\Wireboard\examples\agent-slide.json'
 & $wireboard render $board.id --frame 1 --output "$PWD\slide.png"
 & $wireboard export $board.id --output "$PWD\board.json"
 ```
 
-Пример POSIX shell:
+POSIX shell example:
 
 ```sh
 ./wireboard boards
-./wireboard create --title 'Пользователь и агент'
-# Возьми id/revision из ответа create или inspect.
+./wireboard create --title 'User and agent'
+# Read id/revision from the create or inspect response.
 ./wireboard inspect BOARD_ID
 ./wireboard apply BOARD_ID --revision 0 --file examples/agent-slide.json
 ./wireboard render BOARD_ID --frame 1 --output "$PWD/slide.png"
 ./wireboard export BOARD_ID --output "$PWD/board.json"
 ```
 
-CLI выводит JSON; ошибка — JSON в stderr и ненулевой код выхода. `apply` принимает массив операций из UTF-8 файла или `--file -` через stdin. Пример с ID 1–4 подходит только новой пустой доске; для существующей используй её `nextId`. Устаревшая revision вызывает конфликт, без автоматического повторения.
+The CLI prints JSON. Errors are JSON on stderr with a nonzero exit code. `apply` accepts an operation array from a UTF-8 file, or stdin with `--file -`. The example using IDs 1 through 4 is suitable only for a new, empty board; use the board's `nextId` for an existing board. A stale revision returns a conflict without an automatic retry.
 
-## Данные и пределы
+## Data and limits
 
-Канонический JSON — версия 2: title/fontWeight объектов и обсуждения с отдельными счётчиками. Старые v1 читаются без переписывания; первая успешная правка сохраняет v2. Текст, цвета, размеры и ID старых объектов сохраняются без догадок о заголовках. Экспорт/импорт поддерживает v1/v2, экспорт всегда v2. Перед обновлением сохраните JSON или резервную копию boards/; старый бинарник v1 не читает новый формат. SVG/PNG/презентация/миниатюры не содержат обсуждений. До 500 веток, 100 сообщений/ветка, 10000 сообщений/доска, 4000 символов/сообщение.
+The current board JSON format is version 3. Version 2 introduced object `title`/`fontWeight` fields and discussions with separate counters; version 3 adds explicit frame membership, described below. Legacy v1 documents can be read without being rewritten; the first successful edit saves the current format. Existing object text, colors, dimensions, and IDs are preserved without guessing titles. Export/import supports legacy v1/v2 documents, and export uses the current format. Before upgrading, save a JSON export or a backup of `boards/`; an older v1 binary cannot read the newer format. SVG/PNG exports, presentations, and thumbnails do not include discussions. Limits: 500 threads, 100 messages per thread, 10,000 messages per board, and 4,000 characters per message.
 
-Windows: `%LOCALAPPDATA%\Wireboard`; macOS: `~/Library/Application Support/Wireboard`; Linux: абсолютный `$XDG_DATA_HOME/wireboard`, иначе `~/.local/share/wireboard`. Доски в `boards/*.json`, запись через временный файл и атомарную замену. Runtime-токен защищён ACL на Windows и правами 0600 на Unix. Демо создаётся только в новом пустом каталоге. Повреждённые данные вызывают ошибку запуска и не перезаписываются.
+Data directories: `%LOCALAPPDATA%\Wireboard` on Windows; `~/Library/Application Support/Wireboard` on macOS; an absolute `$XDG_DATA_HOME/wireboard` on Linux, otherwise `~/.local/share/wireboard`. Boards live in `boards/*.json`, written through a temporary file and atomic replacement. Windows ACLs protect the runtime token; Unix permissions are 0600. The demo is created only in a new, empty directory. Corrupt data causes a startup error and is not overwritten.
 
-До 2000 объектов, 100 операций за транзакцию, 32 MiB JSON, 8 MiB исходных байтов изображения, 16 млн пикселей после декодирования. Координаты ±100000; размеры 20–10000; текст 10000 символов; масштаб 10–400%. Undo/Redo: до 100 действий участника и 128 MiB журнала на доску, сохраняется после перезапуска. PNG пресета «Слайд 16:9» — 1920×1080; свободный фрейм сохраняет свои пропорции. PNG всей доски ограничен 8192 px на сторону и 16 млн пикселей, для больших досок используй SVG. Одновременно допускается два задания рендеринга; занятый рендер возвращает явную ошибку.
+Limits: 2,000 objects, 100 operations per transaction, 32 MiB of JSON, 8 MiB of source image bytes, and 16 million pixels after decoding. Coordinates range from -100,000 to 100,000; dimensions from 20 to 10,000; text is limited to 10,000 characters; zoom ranges from 10% to 400%. Undo/Redo stores up to 100 actions per actor and a 128 MiB journal per board, surviving restarts. The '16:9 slide' PNG preset is 1920 by 1080; a custom frame keeps its proportions. Whole-board PNG export is limited to 8192 pixels per side and 16 million pixels; use SVG for larger boards. Two render jobs can run concurrently; a busy renderer returns an explicit error.
 
-Если невозможно определить результат замены файла, сервер блокирует дальнейшие чтения/изменения до перезапуска, чтобы не продолжать с расходящимися версиями памяти и диска. Черновики незавершённых действий хранятся в текущей вкладке; перед её закрытием заверши или отмени действие.
+If the result of a file replacement cannot be determined, the server blocks further reads and changes until it restarts, preventing memory and disk state from diverging. Drafts of unfinished actions stay in the current tab; finish or cancel them before closing it.
 
-## Разработка и сборка
+## Development and builds
 
-Rust stable и Node.js 22.12+ для сборки frontend. Windows требует MSVC Build Tools, Linux/macOS — системный C toolchain. Lock-файлы включены.
+Building requires Rust stable and Node.js 22.12 or later for the frontend. Windows requires MSVC Build Tools; Linux/macOS require a system C toolchain. Lockfiles are included.
 
 ```sh
 npm ci
@@ -113,61 +113,61 @@ npx playwright install
 npm test
 ```
 
-В PowerShell используй `npm.cmd`/`npx.cmd`. Сначала собирай frontend, затем Rust: production ресурсы встраиваются в release-бинарник. `.cargo/config.toml` включает статический C runtime на Windows; Linux комплект собирается с `rustup target add x86_64-unknown-linux-musl` и `cargo build --release --locked --target x86_64-unknown-linux-musl`. Настройка CRT описана в [Rust Reference](https://doc.rust-lang.org/reference/linkage.html#static-and-dynamic-c-runtimes). После запуска не нужен каталог `frontend/dist`. `npm run release` выполняет обе сборки. `node scripts/package.mjs windows-x86_64 target/release/wireboard.exe` создаёт локальный комплект; на Unix укажи свою платформу и `target/release/wireboard`.
+In PowerShell, use `npm.cmd`/`npx.cmd`. Build the frontend before Rust: production assets are embedded in the release binary. `.cargo/config.toml` enables the static C runtime on Windows. Build the Linux bundle with `rustup target add x86_64-unknown-linux-musl` and `cargo build --release --locked --target x86_64-unknown-linux-musl`. See the [Rust Reference](https://doc.rust-lang.org/reference/linkage.html#static-and-dynamic-c-runtimes) for CRT configuration. The packaged application does not need the `frontend/dist` directory at runtime. `npm run release` performs both builds. `node scripts/package.mjs windows-x86_64 target/release/wireboard.exe` creates a local bundle; on Unix, provide your platform and `target/release/wireboard`.
 
-Для macOS предусмотрена ручная сборка на Mac и GitHub Actions workflow `.github/workflows/build.yml` для Apple Silicon и Intel вместе с Windows/Linux. Workflow запускается вручную после размещения проекта пользователем в GitHub; текущая работа ничего не публикует.
+For macOS, build manually on a Mac or use the GitHub Actions workflow at `.github/workflows/build.yml`, which covers Apple Silicon and Intel alongside Windows/Linux. Run the workflow manually from GitHub Actions.
 
-`just build` собирает production Docker image, включая Rust-тесты и frontend typecheck. Для проверки живого Compose-сервера разработчиком: `node scripts/docker-smoke.mjs` после сборки image и `npx playwright install chromium`. Проверка создаёт два отдельных Compose project/volume на портах 19849/19850, проверяет одновременные сессии в одном браузере, CLI, экспорт и сохранность после остановки; пользовательский сервис не останавливает. Смена проверочных портов: `WIREBOARD_SMOKE_PORT` / `WIREBOARD_SMOKE_PEER_PORT`. Эта проверка требует Node.js только на машине разработчика.
+`just build` builds the production Docker image, including Rust tests and frontend typechecking. To check a live Compose server during development, run `node scripts/docker-smoke.mjs` after building the image and running `npx playwright install chromium`. The check creates two separate Compose projects/volumes on ports 19849/19850. It checks simultaneous sessions in one browser, the CLI, export, and persistence after stopping, without stopping your application service. Override the test ports with `WIREBOARD_SMOKE_PORT` / `WIREBOARD_SMOKE_PEER_PORT`. This check requires Node.js only on the development machine.
 
-## Проверка платформ
+## Platform verification
 
-Docker/Compose проверен на Windows Docker Desktop с Linux amd64 image: сборка, 30 Rust-тестов, редактор, CLI, экспорт, две браузерные сессии на разных портах и сохранность после `down/up`. Отчёт: `work/docker/verification.md`. POSIX recipes проверены в WSL; реальный Docker arm64 build и открытие на Mac пока отдельно не проверены.
+Docker/Compose was checked on Windows Docker Desktop with a Linux amd64 image: build, 30 Rust tests, editor, CLI, export, two browser sessions on different ports, and persistence after `down/up`. The local report is `work/docker/verification.md`. POSIX recipes were checked in WSL; an actual Docker arm64 build and opening the application on a Mac have not yet been checked separately.
 
-| Платформа | Проверено локально |
+| Platform | Checked locally |
 | --- | --- |
-| Windows x86_64 | Rust 1.96/MSVC, модель/API/CLI, Chromium/Firefox/WebKit; release smoke — см. `work/verification.md` |
-| Linux x86_64 | Ubuntu 26.04.1 в WSL, Rust 1.99.0; комплект статически собран для musl; тесты и release smoke — см. `work/verification.md`; системный GUI Linux отдельно не проверен |
-| macOS arm64 / Intel | `cargo check` для aarch64-apple-darwin и x86_64-apple-darwin прошёл; линковка и реальный запуск на Mac пока не проверены |
+| Windows x86_64 | Rust 1.96/MSVC, model/API/CLI, Chromium/Firefox/WebKit; release smoke test documented in `work/verification.md` |
+| Linux x86_64 | Ubuntu 26.04.1 in WSL, Rust 1.99.0; bundle statically built for musl; tests and release smoke test documented in `work/verification.md`; native Linux GUI not checked separately |
+| macOS arm64 / Intel | `cargo check` passed for aarch64-apple-darwin and x86_64-apple-darwin; linking and actual execution on a Mac remain unverified |
 
-Минимальные версии ОС не заявлены: проверены указанные среды. Linux-комплект статически собран с musl, без зависимости от версии glibc/libgcc. Для автоматического открытия браузера требуется системный браузер и доступный Linux opener (например, xdg-open). Workflow Linux собирает тот же target на Ubuntu 22.04. Наличие workflow не подтверждает прошедшую сборку.
+Minimum OS versions are not specified; verification covers the environments above. The Linux bundle is statically built with musl and does not depend on a specific glibc/libgcc version. Automatically opening the browser requires a system browser and an available Linux opener, such as `xdg-open`. The Linux workflow builds the same target on Ubuntu 22.04. Having a workflow does not establish that its build has passed.
 
-Документы: `DESIGN.md`, `docs/superpowers/plans/2026-10-06-wireboard.md`; результаты и решения независимого ревью — `work/verification.md` и `work/progress.md`. Git не инициализирован по договорённости с пользователем. Шрифт Golos Text поставляется по SIL Open Font License, см. `frontend/public/fonts/OFL.txt`.
+Design documents: `DESIGN.md` and `docs/superpowers/plans/2026-10-06-wireboard.md`. Independent review results and decisions are recorded locally in `work/verification.md` and `work/progress.md`; `work/` is excluded from Git. Golos Text is distributed under the SIL Open Font License; see `frontend/public/fonts/OFL.txt`.
 
-## Жесты и история редактора
+## Editor gestures and history
 
-Фрейм F имеет свободный размер. Восемь ручек меняют границы; боковые ручки меняют одну ось, Shift сохраняет пропорции начала жеста. Дети не масштабируются и остаются связанными с фреймом даже снаружи его новой рамки. В свойствах доступны независимые ширина/высота, «Слайд 16:9» (960×540), подгонка под содержимое с отступом 24 и отдельное удаление фрейма с содержимым. Обычное удаление рамки сохраняет детей.
+The F tool creates a frame of any size. Eight handles resize its bounds; side handles change one axis, and Shift preserves the proportions from the start of the gesture. Children do not scale and remain assigned to the frame even outside its new bounds. Properties include independent width/height, a '16:9 slide' preset (960 by 540), fitting to contents with 24 units of padding, and a separate action to delete the frame and its contents. Ordinary frame deletion preserves its children.
 
-Пустое место внутри рамки позволяет выделять блоки протягиванием. Заголовок и граница переносят фрейм со всеми детьми. Shift переключает выделение. При переносе блока подсвечивается целевой фрейм; отпускание мыши меняет координаты и принадлежность одним действием. Escape отменяет активный жест. Пробел + перетаскивание двигает холст и сохраняет текстовый черновик; в поле ввода пробел остаётся обычным символом.
+Drag in empty space inside a frame to select blocks. Drag its title or border to move the frame and all its children. Shift toggles selection. Moving a block highlights the target frame; releasing the pointer updates its coordinates and membership in one action. Escape cancels the active gesture. Space+drag pans the canvas while preserving the text draft; in an input field, Space remains a normal character.
 
-Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z и Ctrl+Y работают по физическим клавишам в RU/EN. В поле ввода действует обычная отмена текста. История относится к этому браузерному профилю и сохраняется после перезапуска: до 100 действий участника и 128 MiB журнала на доску. Независимый текст агента сохраняется при отмене вашего переноса. Изменение того же свойства, включая возврат к старому значению другим клиентом, вызывает конфликт. История до этой миграции не восстанавливается.
+Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, and Ctrl+Y use physical keys in both Russian and English keyboard layouts. Input fields retain ordinary text undo. History belongs to the current browser profile and survives restarts: up to 100 actions per actor and a 128 MiB journal per board. Independent agent text changes survive when you undo your own movement. Another client changing the same property, even if it restores an earlier value, causes a conflict. History from before this migration is not restored.
 
-Во время сохранения можно продолжать переносы и поставить Undo в очередь. Если ответ потерян, «Повторить сохранение» сначала проверяет квитанцию. Такой повтор сохраняет прежний ID и исходный запрос; действие не выполняется дважды. До проверки неопределённого результата сброс действия недоступен.
+You can keep moving objects and queue Undo while a save is in progress. If a response is lost, 'Retry save' checks the receipt first. The retry preserves the original ID and request, so the action does not run twice. Discarding an action remains unavailable until its uncertain outcome has been checked.
 
-Копирование выделения включает потомков выбранных фреймов и связи между скопированными объектами. Внешние связи, комментарии и история остаются на исходной доске. Вставка получает новые ID и сохраняет вложенность; всё отменяется одним Undo. На исходной доске каждая вставка смещается на 24 единицы, на другой доске первая копия появляется в центре видимой области. Корни получают принадлежность по своему центру на целевой доске. Максимум 50 объектов со связями в одной копии; превышение или некорректный буфер дают ошибку без частичной вставки. Обычный текст из буфера создаёт текстовый объект, изображение — изображение. В input/textarea/select/contenteditable события буфера остаются нативными.
+Copying a selection includes descendants of selected frames and connectors between copied objects. External connectors, comments, and history stay on the source board. Pasting assigns new IDs and preserves nesting; one Undo reverses the whole paste. Each paste on the source board is offset by 24 units; the first paste on another board appears at the center of the visible area. Root objects receive frame membership based on their centers on the destination board. A copy can contain at most 50 objects, including connectors; exceeding this limit or using invalid clipboard data returns an error without a partial paste. Plain clipboard text creates a text object, and an image creates an image object. Clipboard events in input/textarea/select/contenteditable elements retain native behavior.
 
-Удержание стрелок, их повторы и одновременные стрелки составляют один шаг истории до отпускания последней. Смена действия, выделения или потеря фокуса завершает серию; Escape отменяет ещё не отправленное движение. Шаг не зависит от масштаба, фрейм и его дети не двигаются дважды. Ctrl/Cmd+Z во время серии завершает и сразу отменяет её. Создание R/T/F сохраняется после отпускания указателя; Escape, отмена захвата и потеря фокуса не оставляют объекта. Предпросмотр показывает размер в единицах доски.
+Holding arrow keys, repeated key events, and simultaneous arrow keys form one history step until the last key is released. Changing the action or selection, or losing focus, ends the sequence; Escape cancels movement that has not yet been sent. The step size does not depend on zoom, and a frame and its children are not moved twice. Ctrl/Cmd+Z during a sequence ends it and immediately undoes it. R/T/F creation is saved when the pointer is released; Escape, canceled pointer capture, and loss of focus leave no object behind. The preview shows dimensions in board units.
 
-У одной выделенной связи видны круглые ручки начала и конца. Перетяните ручку на блок, текст или изображение: подсветка показывает цель и ближайшую сторону привязки. Фреймы и связи целями не являются; связать блок с самим собой нельзя. Пустое место или недопустимая цель сохраняет исходную связь. Escape, потеря фокуса/захвата или смена инструмента отменяет жест. Успешный перенос конца и стороны — одно действие Undo/Redo; текст агента при отмене сохраняется. Изменённая геометрия, удаление цели или изменение концов другим участником вызывает конфликт вместо устаревшей привязки.
+A single selected connector shows circular handles at its start and end. Drag a handle onto a block, text object, or image: highlighting shows the target and nearest attachment side. Frames and connectors are not targets, and a block cannot connect to itself. Dropping in empty space or on an invalid target preserves the original connection. Escape, loss of focus/capture, or switching tools cancels the gesture. Successfully moving an endpoint and its attachment side creates one Undo/Redo action; undo preserves agent text changes. Changed geometry, a deleted target, or another actor changing the endpoints causes a conflict instead of applying a stale attachment.
 
-Прокрутка холста работает по двум осям, Ctrl/Cmd+колесо и pinch меняют масштаб в диапазоне 10–400%. Положение под курсором сохраняется, кроме предельных координат камеры. Навигация не меняет доску и историю, следует за текстовым черновиком и комментариями; во время захваченного жеста колесо игнорируется. Панели прокручиваются обычным способом. Реальный аппаратный pinch требует проверки на конкретном тачпаде; браузерные события pinch проверены автоматически.
+Canvas scrolling works on both axes. Ctrl/Cmd+wheel and pinch change zoom from 10% to 400%. The position under the pointer stays fixed except at camera coordinate limits. Navigation does not change the board or history and keeps text drafts and comments with the canvas; wheel input is ignored during a captured gesture. Panels scroll normally. Hardware pinch still needs checking on the specific touchpad; browser pinch events have been tested automatically.
 
-## Команды агента с защитой повторов
+## Agent commands and retry protection
 
-Старые массивы операций совместимы, но без ID команды не защищены от повторного выполнения и не входят в собственное Undo браузера. Для новых команд указывайте все три флага:
+Legacy operation arrays remain compatible, but without a command ID they have no protection against duplicate execution and do not appear in the browser's own Undo history. For new commands, supply all three flags:
 
 ```sh
 just cli apply BOARD_ID --revision REV --file /data/operations.json --command-id UUID --actor-id codex-session --author codex
 just cli command BOARD_ID UUID
 ```
 
-Для Claude используйте `--author claude` и отдельный `--actor-id`. Для собственной CLI-истории используйте `--author user`, затем `history BOARD_ID --revision REV --direction undo --target-command-id PREVIOUS_UUID --command-id NEW_UUID --actor-id SAME_ACTOR`. Новое действие получает новый UUID; повтор потерянного запроса использует прежние UUID, revision, автора и файл. CLI сохраняет исходный запрос в `data-dir/requests` до отправки. Квитанции доступны после рестарта и удаления старых шагов Undo; экспорт схемы содержит только Board, без журнала, квитанций и runtime-секретов.
+For Claude, use `--author claude` and a separate `--actor-id`. For your own CLI history, use `--author user`, then `history BOARD_ID --revision REV --direction undo --target-command-id PREVIOUS_UUID --command-id NEW_UUID --actor-id SAME_ACTOR`. Each new action gets a new UUID; retrying a lost request uses the same UUIDs, revision, author, and file. The CLI saves the original request in `data-dir/requests` before sending it. Receipts remain available after restarts and pruning old Undo steps. A diagram export contains only the Board, without the journal, receipts, or runtime secrets.
 
-Board v3 хранит `parentFrameId`; `update` с `parentFrameId:null` освобождает блок, отсутствие поля сохраняет принадлежность. Перенос фрейма следует явным связям. Старые схемы получают принадлежность один раз при миграции, а исходные байты сохраняются в `backups/ux-v3`. Для возврата к старому серверу используйте его бинарник и копию data-dir до миграции.
+Board v3 stores `parentFrameId`. An `update` with `parentFrameId:null` releases a block from its frame; omitting the field preserves membership. Moving a frame follows explicit membership relationships. Legacy diagrams receive membership once during migration, and their original bytes are saved in `backups/ux-v3`. To return to an older server, use its binary and a copy of the data directory from before the migration.
 
-## Переход с Docker-тома на локальную библиотеку
+## Migrating from a Docker volume to a local library
 
-До первого `just up` новой версии остановите старый контейнер, сделайте резервную копию его `/data` через `docker cp`, затем скопируйте `boards`, `backups` и `requests` в выбранный локальный каталог. Сохраняйте файлы документов целиком: они содержат доску, комментарии и историю. Не копируйте `runtime.json` и `.lock` и не перезаписывайте отличающиеся документы с тем же ID. После запуска сверяйте список досок и revision. Старый volume `wireboard_wireboard-data` остаётся резервным источником; новая версия его не удаляет. Один сервер обслуживает одну библиотеку; Docker и native — альтернативные способы запуска.
+Before the first `just up` with the new version, stop the old container, back up its `/data` with `docker cp`, then copy `boards`, `backups`, and `requests` into your chosen local directory. Preserve complete document files: they contain the board, comments, and history. Do not copy `runtime.json` or `.lock`, and do not overwrite different documents with the same ID. After starting, compare the board list and revisions. The old `wireboard_wireboard-data` volume remains a backup source; the new version does not delete it. One server serves one library; Docker and native builds are alternative ways to run it.
 
-Блокировка `.library-lock` защищает общую библиотеку от двух серверов, включая Windows вместе с Docker. При нормальной остановке она снимается. После аварийного завершения сначала убедитесь, что все серверы этой библиотеки остановлены, затем удалите только `.library-lock` (файл `owner` и пустой каталог). Файлы досок и `runtime.json` вручную не меняйте. Возраст блокировки не считается доказательством остановки сервера.
+The `.library-lock` lock protects a shared library from two servers, including Windows and Docker together. A normal shutdown releases it. After a crash, first confirm that all servers using the library have stopped, then remove only `.library-lock` (the `owner` file and empty directory). Do not edit board files or `runtime.json` manually. The age of a lock is not proof that its server has stopped.
 
-Доски получают постоянные читаемые адреса, например `/b/inter-rao`. Кириллица транслитерируется, одинаковые названия получают `-2`, `-3`. Переименование не меняет адрес. Старые ссылки `/?board=<id>` открывают ту же доску и переходят на её slug. Внутренние UUID и имена файлов досок сохраняются. Индекс `links.json` хранит соответствия и резервирует адреса удалённых досок; его нужно копировать вместе с библиотекой. Он не меняет документы досок и не редактируется вручную. CLI `boards` возвращает `slug`; остальные команды по-прежнему принимают `id`.
+Boards have stable, readable URLs, such as `/b/inter-rao`. Cyrillic titles are transliterated; duplicate titles receive `-2`, `-3`, and so on. Renaming a board does not change its URL. Legacy `/?board=<id>` links open the same board and redirect to its slug. Internal UUIDs and board filenames remain unchanged. The `links.json` index stores mappings and reserves URLs of deleted boards; copy it with the library. It does not change board documents and must not be edited manually. The `boards` CLI command returns a `slug`; other commands still accept an `id`.
