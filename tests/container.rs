@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 use std::time::Duration;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn container_listener_keeps_internal_cli_and_external_browser_authenticated() {
+async fn container_listener_supports_internal_cli_and_unrestricted_browser_access() {
     let dir = tempfile::tempdir().unwrap();
     let exe = env!("CARGO_BIN_EXE_wireboard");
     let public = "http://127.0.0.1:19848";
@@ -51,7 +51,7 @@ async fn container_listener_keeps_internal_cli_and_external_browser_authenticate
         .unwrap();
     assert!(
         output.status.success(),
-        "CLI must create browser grant with internal endpoint"
+        "CLI must reach the server through its internal endpoint"
     );
     let url = String::from_utf8(output.stdout).unwrap();
     assert_eq!(
@@ -100,11 +100,11 @@ async fn container_listener_keeps_internal_cli_and_external_browser_authenticate
             .post(format!("{endpoint}/api/boards"))
             .header("Host", host)
             .header("Origin", origin)
-            .json(&json!({"title":"Rejected"}))
+            .json(&json!({"title":"Local request"}))
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), 403);
+        assert_eq!(response.status(), 200);
     }
     server.kill().await.unwrap();
 }

@@ -27,7 +27,6 @@ use tokio_stream::{StreamExt, wrappers::BroadcastStream};
 pub struct ApiState {
     pub store: Arc<Mutex<Store>>,
     pub origin: String,
-    internal_host: String,
     pub token: String,
     pub events: broadcast::Sender<String>,
     pub shutdown: watch::Sender<bool>,
@@ -39,7 +38,6 @@ impl ApiState {
         let (shutdown, _) = watch::channel(false);
         Self {
             store: Arc::new(Mutex::new(store)),
-            internal_host: origin.strip_prefix("http://").unwrap_or("").to_string(),
             origin,
             token,
             events,
@@ -79,7 +77,10 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/library", get(library))
         .fallback(asset)
         .layer(DefaultBodyLimit::max(MAX_BOARD_BYTES))
-        .layer(middleware::from_fn_with_state(state.clone(), guard))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            response_policy,
+        ))
         .with_state(state)
 }
 async fn layout_metrics() -> Json<&'static crate::layout::FontMetrics> {
@@ -95,36 +96,8 @@ async fn library(State(state): State<ApiState>) -> Result<Json<serde_json::Value
         json!({"url":state.browser_url(),"path":path.to_string_lossy().trim_start_matches("\\\\?\\"),"boardCount":store.list()?.len(),"format":"wireboard-json","mode":"local"}),
     ))
 }
-fn local_alias(value: &str) -> String {
-    value.replacen("127.0.0.1", "localhost", 1)
-}
-async fn guard(State(state): State<ApiState>, request: Request, next: Next) -> Response {
-    let rejected = |code, message| AppError::new(code, message).into_response();
+async fn response_policy(State(state): State<ApiState>, request: Request, next: Next) -> Response {
     let headers = request.headers();
-    let expected_host = state.origin.strip_prefix("http://").unwrap_or("");
-    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok());
-    let alias_host = local_alias(expected_host);
-    let alias_origin = local_alias(&state.origin);
-    if host != Some(expected_host)
-        && host != Some(alias_host.as_str())
-        && host != Some(state.internal_host.as_str())
-    {
-        return rejected(ErrorCode::Forbidden, "Недопустимый Host");
-    }
-    if headers.get(header::ORIGIN).is_some_and(
-        |v| !matches!(v.to_str(), Ok(origin) if origin == state.origin || origin == alias_origin),
-    ) {
-        return rejected(ErrorCode::Forbidden, "Недопустимый Origin");
-    }
-    if headers
-        .get("sec-fetch-site")
-        .is_some_and(|v| v != "none" && v != "same-origin")
-    {
-        return rejected(
-            ErrorCode::Forbidden,
-            "Доступ разрешён только из локального редактора",
-        );
-    }
     let is_api = request.uri().path().starts_with("/api/");
     if is_api {
         let bearer = headers
@@ -132,25 +105,11 @@ async fn guard(State(state): State<ApiState>, request: Request, next: Next) -> R
             .and_then(|v| v.to_str().ok())
             .is_some_and(|v| v == format!("Bearer {}", state.token));
         if headers.contains_key(header::AUTHORIZATION) && !bearer {
-            return rejected(
+            return AppError::new(
                 ErrorCode::Unauthorized,
                 "CLI подключён к другой или устаревшей библиотеке",
-            );
-        }
-        // Local reads need no session. Browser writes still require this editor's
-        // Origin; CLI writes use the private runtime token. Other sites cannot
-        // read the API through CORS or access it via cross-site fetches/embeds.
-        if !bearer
-            && request.method() != axum::http::Method::GET
-            && !headers
-                .get(header::ORIGIN)
-                .and_then(|v| v.to_str().ok())
-                .is_some_and(|origin| origin == state.origin || origin == alias_origin)
-        {
-            return rejected(
-                ErrorCode::Forbidden,
-                "Для изменения из браузера требуется Origin",
-            );
+            )
+            .into_response();
         }
         if headers
             .get(header::CONTENT_LENGTH)

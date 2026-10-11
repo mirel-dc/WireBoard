@@ -61,7 +61,7 @@ async fn two_clients_only_one_wins() {
     task.abort();
 }
 #[tokio::test]
-async fn auth_origin_and_limits() {
+async fn local_access_and_limits() {
     let (_dir, url, task) = server().await;
     let client = reqwest::Client::builder().no_proxy().build().unwrap();
     assert_eq!(
@@ -82,7 +82,7 @@ async fn auth_origin_and_limits() {
             .await
             .unwrap()
             .status(),
-        403
+        200
     );
     assert_eq!(
         client
@@ -93,7 +93,7 @@ async fn auth_origin_and_limits() {
             .await
             .unwrap()
             .status(),
-        403
+        200
     );
     assert_eq!(
         client
@@ -103,13 +103,35 @@ async fn auth_origin_and_limits() {
             .await
             .unwrap()
             .status(),
-        403
+        200
     );
     let home = client.get(&url).send().await.unwrap();
     assert!(
         home.headers().get("set-cookie").is_none(),
-        "Unauthenticated GET must not grant a session"
+        "Opening the editor needs no browser session"
     );
+    for site in ["same-site", "cross-site"] {
+        for path in ["/", "/b/local-board"] {
+            // Refreshing a link opened from another page retains its fetch site.
+            for _ in 0..2 {
+                let editor = client
+                    .get(format!("{url}{path}"))
+                    .header("Sec-Fetch-Site", site)
+                    .header("Sec-Fetch-Mode", "navigate")
+                    .header("Sec-Fetch-Dest", "document")
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(editor.status(), 200);
+                assert!(
+                    editor.headers()["content-type"]
+                        .to_str()
+                        .unwrap()
+                        .starts_with("text/html")
+                );
+            }
+        }
+    }
     assert_eq!(
         client
             .post(format!("{url}/api/boards"))
@@ -118,12 +140,13 @@ async fn auth_origin_and_limits() {
             .await
             .unwrap()
             .status(),
-        403
+        200
     );
     assert_eq!(
         client
             .post(format!("{url}/api/boards"))
-            .header("Origin", &url)
+            .header("Origin", "https://external.example")
+            .header("Sec-Fetch-Site", "cross-site")
             .json(&json!({"title":"Local"}))
             .send()
             .await

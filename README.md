@@ -24,7 +24,7 @@ On Windows, open `dist/windows-x86_64/launch.cmd` or run `./launch.cmd` from the
 
 For a custom port or data directory, use `./launch.cmd --port 9844 --data-dir "D:\My Boards"` or `./launch.sh --port 9844 --data-dir "$HOME/My Boards"`. Use the same `--data-dir` with the CLI; it reads the port from the protected runtime file. Only one server can serve a directory at a time. The application does not install a startup service.
 
-The editor opens at a regular local URL without an account, tokens in links, or browser cookies. The CLI uses the private runtime file in its data directory to distinguish the intended server from another server on the same port. Host, Origin, and Fetch Metadata checks reject requests from other websites; Docker publishes the port only on loopback. Do not publish the runtime file.
+The editor opens at a regular local URL without an account, tokens in links, or browser cookies. Links and page reloads work without Host, Origin, or Fetch Metadata restrictions, and local API writes need no Origin header. The CLI uses the private runtime file in its data directory to distinguish the intended server from another server on the same port. Docker publishes the port only on loopback. Do not publish the runtime file.
 
 On macOS, an unsigned local binary may need explicit approval in System Settings > Privacy & Security. The application is neither signed nor notarized. Build macOS binaries on the corresponding Mac; this bundle does not yet include verified Mac builds.
 

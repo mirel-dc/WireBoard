@@ -136,7 +136,7 @@ async fn local_library_opens_without_a_grant_and_survives_reopening() {
                 .await
                 .unwrap()
                 .status(),
-            403
+            200
         );
     }
     for site in ["cross-site", "same-site"] {
@@ -148,7 +148,7 @@ async fn local_library_opens_without_a_grant_and_survives_reopening() {
                 .await
                 .unwrap()
                 .status(),
-            403
+            200
         );
     }
     assert_eq!(
@@ -159,7 +159,7 @@ async fn local_library_opens_without_a_grant_and_survives_reopening() {
             .await
             .unwrap()
             .status(),
-        403
+        200
     );
     assert_eq!(
         client
@@ -169,7 +169,7 @@ async fn local_library_opens_without_a_grant_and_survives_reopening() {
             .await
             .unwrap()
             .status(),
-        403
+        200
     );
     task.abort();
 }
