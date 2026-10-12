@@ -1,5 +1,6 @@
 set minimum-version := '1.58.0'
 set quiet
+set dotenv-load
 library_default := if os() == 'windows' { env_var('LOCALAPPDATA') / 'Wireboard' } else if os() == 'macos' { env_var('HOME') / 'Library/Application Support/Wireboard' } else { (if env_var_or_default('XDG_DATA_HOME', '') =~ '^/' { env_var('XDG_DATA_HOME') } else { env_var('HOME') / '.local/share' }) / 'wireboard' }
 export WIREBOARD_DATA_DIR := env_var_or_default('WIREBOARD_DATA_DIR', library_default)
 export WIREBOARD_UID := if os() == 'windows' { '10001' } else { shell('id -u') }
@@ -14,8 +15,16 @@ default:
     just --list
 
 # Build and start Wireboard; wait for the health check.
+[unix]
 up: prepare-library
     docker compose up --build --detach --wait --wait-timeout 120
+
+# Verify Docker sees the selected Windows folder before starting a writer.
+[windows]
+up: prepare-library
+    docker compose build
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/docker-check-library.ps1
+    docker compose up --detach --wait --wait-timeout 120
 
 [private]
 [windows]

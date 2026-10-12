@@ -22,9 +22,13 @@ export class Comments {
   private boardId: string | null = null;
   private reanchoring: {board:string;id:number} | null = null;
   private popupTarget: PopupTarget = { type: 'list' };
+  private popupPosition: Point | null = null;
+  private popupDrag: { id: number; start: Point; origin: Point } | null = null;
+  private heading = this.panel.querySelector<HTMLElement>('.panel-heading')!;
   get isSending(){return this.sending;}
   cancelAnchor(){this.reanchoring=null;}
   constructor(private view: CanvasView, private cb: Callbacks) {
+    this.bindPopupDrag();
     try { this.pinsVisible = localStorage.getItem('wireboard:comment-pins') !== 'hidden'; } catch { /* View preferences are optional. */ }
     this.pinsToggle.onclick = () => {
       this.pinsVisible = !this.pinsVisible;
@@ -46,9 +50,45 @@ export class Comments {
     window.visualViewport?.addEventListener('scroll', () => this.position());
   }
   private key(selection: number | 'new') { return `${this.cb.current()?.id}:${selection}`; }
+  private bindPopupDrag() {
+    const title = document.getElementById('comments-heading')!;
+    title.tabIndex = 0;
+    title.title = 'Перетащите заголовок, чтобы переместить окно. Стрелки — перемещение с клавиатуры.';
+    this.heading.addEventListener('pointerdown', event => {
+      if (!event.isPrimary || event.button !== 0 || (event.target as globalThis.Element).closest('button')) return;
+      event.preventDefault(); event.stopPropagation();
+      const box = this.panel.getBoundingClientRect();
+      this.popupDrag = { id: event.pointerId, start: { x: event.clientX, y: event.clientY }, origin: { x: box.x, y: box.y } };
+      this.popupPosition = { x: box.x, y: box.y };
+      this.panel.dataset.dragging = 'true';
+      this.heading.setPointerCapture(event.pointerId);
+    });
+    this.heading.addEventListener('pointermove', event => {
+      const drag = this.popupDrag; if (!drag || drag.id !== event.pointerId) return;
+      event.preventDefault(); event.stopPropagation();
+      this.popupPosition = { x: drag.origin.x + event.clientX - drag.start.x, y: drag.origin.y + event.clientY - drag.start.y };
+      this.position();
+    });
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) this.heading.addEventListener(type, event => {
+      if (this.popupDrag?.id === event.pointerId) this.endPopupDrag();
+    });
+    title.addEventListener('keydown', event => {
+      const direction: Point | undefined = ({ ArrowLeft: {x:-1,y:0}, ArrowRight: {x:1,y:0}, ArrowUp: {x:0,y:-1}, ArrowDown: {x:0,y:1} } as Record<string, Point>)[event.key];
+      if (!direction || event.ctrlKey || event.metaKey || event.altKey) return;
+      event.preventDefault(); event.stopPropagation();
+      const box = this.panel.getBoundingClientRect(), step = event.shiftKey ? 1 : 10;
+      this.popupPosition = { x: box.x + direction.x * step, y: box.y + direction.y * step };
+      this.position();
+    });
+  }
+  private endPopupDrag() {
+    const id = this.popupDrag?.id; this.popupDrag = null; delete this.panel.dataset.dragging;
+    if (id !== undefined && this.heading.hasPointerCapture(id)) this.heading.releasePointerCapture(id);
+  }
   private get selection() { return this.selections.get(this.cb.current()?.id ?? ''); }
   private draft(selection: number | 'new') { const key = this.key(selection); let draft = this.drafts.get(key); if (!draft) { draft = { text: '', revision: this.cb.current()!.revision }; this.drafts.set(key, draft); } return draft; }
   private show(target: PopupTarget) {
+    this.endPopupDrag(); this.popupPosition = null;
     const active = document.activeElement as HTMLElement;
     if (!this.panel.contains(active)) {
       this.returnFocus = active;
@@ -61,12 +101,14 @@ export class Comments {
     document.getElementById('comments-open')!.setAttribute('aria-expanded', 'true');
     this.content.scrollTop = 0;
     this.render();
-    if (this.content.querySelector('textarea')) this.focusComposer();
+    const input = this.content.querySelector('textarea');
+    if (input && !input.disabled) this.focusComposer();
+    else if (input) this.panel.focus({ preventScroll: true });
     else (this.content.querySelector<HTMLElement>('.thread-row') ?? this.panel).focus({ preventScroll: true });
   }
   private showList() { const board = this.cb.current(); if (!board) return; this.selections.delete(board.id); this.show({ type: 'list' }); }
   toggle() { if (!this.panel.hidden && this.popupTarget.type === 'list') this.close(); else this.showList(); }
-  close(restoreFocus = true) { this.panel.hidden = true; document.getElementById('comments-open')!.setAttribute('aria-expanded', 'false');const pin=this.returnPin?.board===this.cb.current()?.id?this.layer.querySelector<HTMLButtonElement>(`[data-thread="${this.returnPin?.id}"]`):null;const focus=pin??(this.returnFocus?.isConnected&&!this.panel.contains(this.returnFocus)?this.returnFocus:document.getElementById('comments-open'));if(restoreFocus)focus?.focus({preventScroll:true}); }
+  close(restoreFocus = true) { this.endPopupDrag(); this.panel.hidden = true; document.getElementById('comments-open')!.setAttribute('aria-expanded', 'false');const pin=this.returnPin?.board===this.cb.current()?.id?this.layer.querySelector<HTMLButtonElement>(`[data-thread="${this.returnPin?.id}"]`):null;const focus=pin??(this.returnFocus?.isConnected&&!this.panel.contains(this.returnFocus)?this.returnFocus:document.getElementById('comments-open'));if(restoreFocus)focus?.focus({preventScroll:true}); }
   private position() {
     if (this.panel.hidden) return;
     const viewport = window.visualViewport;
@@ -77,7 +119,8 @@ export class Comments {
     const box = this.panel.getBoundingClientRect();
     const button = document.getElementById('comments-open')!.getBoundingClientRect();
     let x = button.right - box.width, y = button.bottom + 10;
-    if (this.popupTarget.type === 'anchor') {
+    if (this.popupPosition) { x = this.popupPosition.x; y = this.popupPosition.y; }
+    else if (this.popupTarget.type === 'anchor') {
       const target = this.popupTarget;
       const thread = this.cb.current()?.comments.find(c => c.id === target.threadId);
       const point = target.point ?? this.anchorPoint(target.anchor, thread);
@@ -93,6 +136,7 @@ export class Comments {
     }
     this.panel.style.insetInlineStart = `${Math.max(left, Math.min(right - box.width, x))}px`;
     this.panel.style.insetBlockStart = `${Math.max(top, Math.min(bottom - box.height, y))}px`;
+    if (this.popupPosition) this.popupPosition = { x: Math.max(left, Math.min(right - box.width, x)), y: Math.max(top, Math.min(bottom - box.height, y)) };
     if (this.content.querySelector('textarea') === document.activeElement) this.revealComposer();
   }
   private revealComposer() {
@@ -217,6 +261,8 @@ export class Comments {
     const operation: CommentOperation = selection === 'new' ? { op: 'comment_create', author: 'user', text, anchor: draft.anchor! } : { op: 'comment_reply', threadId: selection, author: 'user', text, submitForReview: false };
     if (selection === 'new' && !draft.anchor) return;
     const firstMessageId = draft.pending?.firstMessageId ?? board.nextMessageId;
+    const popupTarget = this.popupTarget;
+    let sent = false;
     const restoreFocus = this.panel.contains(document.activeElement);
     this.sending = true; this.render();
     try {
@@ -226,15 +272,26 @@ export class Comments {
         const candidates = fresh.comments.filter(c => pending.operation.op === 'comment_create' ? JSON.stringify(c.anchor) === JSON.stringify(pending.operation.anchor) : pending.operation.op === 'comment_reply' && c.id === pending.operation.threadId);
         const saved = candidates.find(c => c.messages.some(m => m.id >= pending.firstMessageId && m.author === 'user' && m.text === ('text' in pending.operation ? pending.operation.text : '')));
         if (saved) {
-          this.drafts.delete(draftKey); this.selections.set(board.id, saved.id);
+          this.drafts.delete(draftKey);
+          if (this.popupTarget === popupTarget) this.selections.set(board.id, saved.id);
           if ('text' in pending.operation && text!==pending.operation.text) {this.drafts.set(`${board.id}:${saved.id}`,{text,revision:fresh.revision,notice:'Предыдущее сообщение уже сохранено. Изменённый текст остался новым ответом.'});}
+          else sent = true;
           return;
         }
         revision = fresh.revision;
       }
       const result = await this.cb.commit(board.id,[operation], revision);
-      this.drafts.delete(draftKey); this.selections.set(board.id, selection === 'new' ? result.nextCommentId - 1 : selection);
+      this.drafts.delete(draftKey);
+      if (this.popupTarget === popupTarget) this.selections.set(board.id, selection === 'new' ? result.nextCommentId - 1 : selection);
+      sent = true;
     } catch (error) { draft.pending = { operation, firstMessageId }; draft.notice = 'Ответ не подтверждён. Черновик сохранён. При повторе сначала проверим, не появился ли он на доске.'; this.cb.report(error); }
-    finally { this.sending = false; this.render(); if(restoreFocus&&!this.panel.hidden&&this.cb.current()?.id===board.id)this.focusComposer(); }
+    finally {
+      const focusCurrent = this.panel.contains(document.activeElement);
+      this.sending = false; this.render();
+      if (!this.panel.hidden && this.cb.current()?.id === board.id) {
+        if (sent && this.popupTarget === popupTarget) this.close();
+        else if (focusCurrent || (restoreFocus && this.popupTarget === popupTarget)) this.focusComposer();
+      }
+    }
   }
 }
