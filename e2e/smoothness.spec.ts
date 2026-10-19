@@ -61,3 +61,11 @@ test('pan_gesture_stops_a_running_zoom_animation',async({page})=>{
   expect(panned.a).toBeGreaterThan(before.a);expect(panned.a).toBeLessThan(Math.exp(.2)-.001);
   expect(settled.a).toBeCloseTo(panned.a,6);expect(settled.e).toBeCloseTo(panned.e,3);expect(settled.f).toBeCloseTo(panned.f,3);
 });
+test('pins_follow_the_camera_without_being_recreated',async({page})=>{
+  const id=await setup(page);await apply(page,id,1,[{op:'comment_create',author:'user',text:'Пин',anchor:{type:'element',elementId:1,u:.5,v:.5}}]);
+  const pin=page.locator('.comment-pin');await expect(pin).toHaveCount(1);await pin.evaluate(n=>{(n as unknown as {mark:boolean}).mark=true;});
+  const before=(await pin.boundingBox())!;const canvas=(await page.locator('#canvas').boundingBox())!;
+  await page.mouse.move(canvas.x+canvas.width/2,canvas.y+canvas.height/2);await page.mouse.wheel(0,120);
+  await expect.poll(async()=>(await pin.boundingBox())!.y).toBeLessThan(before.y-50);
+  expect(await pin.evaluate(n=>!!(n as unknown as {mark?:boolean}).mark)).toBe(true);
+});

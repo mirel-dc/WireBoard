@@ -180,18 +180,26 @@ export class Comments {
   }
   renderPins() {
     this.pinsToggle.textContent = this.pinsVisible ? 'Скрыть метки на схеме' : 'Показать метки на схеме';
-    const active=document.activeElement as HTMLElement|null;const focusedPin=active?.closest('.comment-pin')?.getAttribute('data-thread');
-    this.layer.replaceChildren(); const board = this.cb.current(); if (!board || !this.pinsVisible) { this.position(); return; }
-    const placed: { x: number; y: number }[] = [];
-    for (const thread of board.comments.filter(c => c.status !== 'resolved' && (this.filters.has(c.status) || this.selection === c.id)).sort((a,b)=>Number(b.id===this.selection)-Number(a.id===this.selection)||a.id-b.id)) {
-      const p=this.anchorPoint(thread.anchor,thread);
+    const board = this.cb.current();
+    const threads = board && this.pinsVisible ? board.comments.filter(c => c.status !== 'resolved' && (this.filters.has(c.status) || this.selection === c.id)).sort((a,b)=>Number(b.id===this.selection)-Number(a.id===this.selection)||a.id-b.id) : [];
+    // Reuse nodes: camera and preview frames must not drop focus or restart transitions.
+    const pins = new Map([...this.layer.querySelectorAll<HTMLButtonElement>('.comment-pin')].map(pin => [pin.dataset.thread!, pin]));
+    const leaders = new Map([...this.layer.querySelectorAll<HTMLElement>('.pin-leader')].map(leader => [leader.dataset.thread!, leader]));
+    const placed: { x: number; y: number }[] = [], shown = new Set<string>();
+    for (const thread of threads) {
+      const key = String(thread.id), p = this.anchorPoint(thread.anchor, thread);
       const origin = { x: this.view.camera.x + p.x * this.view.camera.zoom, y: this.view.camera.y + p.y * this.view.camera.zoom }; let x = origin.x, y = origin.y;
       while (placed.some(p => Math.hypot(p.x - x, p.y - y) < 44)) { x += 44; }
-      placed.push({ x, y });
-      if (x !== origin.x) { const leader = node('span', undefined, 'pin-leader'); leader.style.left = `${origin.x}px`; leader.style.top = `${origin.y}px`; leader.style.width = `${x - origin.x}px`; this.layer.append(leader); }
-      const pin = node('button', String(thread.id), `comment-pin ${thread.status}${this.orphan(thread) ? ' orphaned' : ''}`);pin.dataset.thread=String(thread.id); pin.setAttribute('aria-label', `Комментарий ${thread.id}: ${labels[thread.status]}`); pin.style.left = `${x}px`; pin.style.top = `${y}px`; pin.onclick = () => {pin.focus({preventScroll:true});this.openThread(thread.id);}; this.layer.append(pin);
+      placed.push({ x, y }); shown.add(key);
+      let leader = leaders.get(key);
+      if (x !== origin.x) { if (!leader) { leader = node('span', undefined, 'pin-leader'); leader.dataset.thread = key; this.layer.prepend(leader); } leader.style.left = `${origin.x}px`; leader.style.top = `${origin.y}px`; leader.style.width = `${x - origin.x}px`; }
+      else { leader?.remove(); leaders.delete(key); }
+      let pin = pins.get(key);
+      if (!pin) { const created = node('button', key); created.dataset.thread = key; created.onclick = () => { created.focus({ preventScroll: true }); this.openThread(thread.id); }; this.layer.append(created); pin = created; }
+      pin.className = `comment-pin ${thread.status}${this.orphan(thread) ? ' orphaned' : ''}`; pin.setAttribute('aria-label', `Комментарий ${thread.id}: ${labels[thread.status]}`); pin.style.left = `${x}px`; pin.style.top = `${y}px`;
     }
-    if(focusedPin)this.layer.querySelector<HTMLButtonElement>(`[data-thread="${focusedPin}"]`)?.focus({preventScroll:true});
+    for (const [key, pin] of pins) if (!shown.has(key)) pin.remove();
+    for (const [key, leader] of leaders) if (!shown.has(key)) leader.remove();
     this.position();
   }
   private messages(container: globalThis.Element, thread: CommentThread) {
