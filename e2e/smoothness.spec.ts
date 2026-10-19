@@ -26,3 +26,38 @@ test('undo_restores_a_deleted_block_on_the_canvas',async({page})=>{
   await expect(page.locator('#scene [data-id="1"]')).toHaveCount(0);await expect.poll(async()=>(await board(page,id)).revision).toBe(2);
   await page.keyboard.press('Control+z');await expect(page.locator('#scene [data-id="1"]')).toBeVisible();await expect(page.locator('#scene [data-id="1"]')).toContainText('Card');
 });
+const zoomSamples=(page:import('@playwright/test').Page)=>page.evaluate(()=>new Promise<number[]>(resolve=>{
+  const svg=document.querySelector('#canvas')!,r=svg.getBoundingClientRect(),out:number[]=[];
+  svg.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,deltaMode:0,ctrlKey:true,clientX:r.x+300,clientY:r.y+300,bubbles:true,cancelable:true}));
+  const tick=()=>{out.push((document.querySelector('#world') as SVGGElement).transform.baseVal.consolidate()!.matrix.a);if(out.length<20)requestAnimationFrame(tick);else resolve(out);};requestAnimationFrame(tick);
+}));
+test('wheel_zoom_eases_to_the_target',async({page})=>{
+  await setup(page);const samples=await zoomSamples(page);
+  expect(new Set(samples.map(v=>v.toFixed(4))).size).toBeGreaterThan(2);expect(samples.at(-1)).toBeCloseTo(Math.exp(.2),3);
+});
+test('reduced_motion_zooms_in_one_step',async({page})=>{
+  await page.emulateMedia({reducedMotion:'reduce'});await setup(page);const samples=await zoomSamples(page);
+  expect(new Set(samples.map(v=>v.toFixed(4))).size).toBe(1);expect(samples[0]).toBeCloseTo(Math.exp(.2),3);
+});
+test('fast_zoom_button_clicks_accumulate',async({page})=>{
+  await setup(page);for(let i=0;i<3;i++)await page.locator('#zoom-in').click();
+  await expect(page.locator('#zoom-value')).toHaveText('173%');
+});
+test('hover_outlines_a_block_without_selecting_it',async({page})=>{
+  await setup(page);await page.keyboard.press('Escape');const b=await box(page);
+  await page.mouse.move(b.x+20,b.y+20);await expect(page.locator('#selection [data-hover]')).toBeVisible();await expect(page.locator('[data-handle="e"]')).toBeHidden();
+  await page.mouse.move(b.x+b.width+150,b.y+b.height+150);await expect(page.locator('#selection [data-hover]')).toBeHidden();
+});
+test('pan_gesture_stops_a_running_zoom_animation',async({page})=>{
+  await setup(page);const matrix=()=>page.evaluate(()=>{const m=(document.querySelector('#world') as SVGGElement).transform.baseVal.consolidate()!.matrix;return{a:m.a,e:m.e,f:m.f};});
+  const before=await matrix(),b=await box(page);
+  await page.evaluate(()=>new Promise<void>(resolve=>{
+    const svg=document.querySelector('#canvas')!,r=svg.getBoundingClientRect();
+    svg.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,deltaMode:0,ctrlKey:true,clientX:r.x+300,clientY:r.y+300,bubbles:true,cancelable:true}));
+    requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()));
+  }));
+  await page.mouse.move(b.x+400,b.y+300);await page.mouse.down({button:'middle'});await page.mouse.move(b.x+440,b.y+300,{steps:2});await page.mouse.up({button:'middle'});
+  const panned=await matrix();await page.waitForTimeout(300);const settled=await matrix();
+  expect(panned.a).toBeGreaterThan(before.a);expect(panned.a).toBeLessThan(Math.exp(.2)-.001);
+  expect(settled.a).toBeCloseTo(panned.a,6);expect(settled.e).toBeCloseTo(panned.e,3);expect(settled.f).toBeCloseTo(panned.f,3);
+});

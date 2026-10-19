@@ -38,6 +38,7 @@ export class CanvasView {
   worldPoint(clientX: number, clientY: number) { const rect = this.svg.getBoundingClientRect(); return { x: (clientX - rect.x - this.camera.x) / this.camera.zoom, y: (clientY - rect.y - this.camera.y) / this.camera.zoom }; }
   pan(dx:number,dy:number){this.zoomAnimation.stop();this.camera={...this.camera,x:clampCoordinate(this.camera.x-dx),y:clampCoordinate(this.camera.y-dy)};this.updateCamera();}
   zoom(factor: number, clientX?: number, clientY?: number) { this.zoomAnimation.stop();this.camera=zoomAround(this.camera,this.camera.zoom*factor,this.anchor(clientX,clientY));this.updateCamera(); }
+  stopZoom(){this.zoomAnimation.stop();}
   animateZoom(factor:number,clientX?:number,clientY?:number){
     if(reducedMotion()){this.zoom(factor,clientX,clientY);return;}
     // Repeated steps extend the running target instead of restarting from the current frame.

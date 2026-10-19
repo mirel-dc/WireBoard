@@ -63,6 +63,7 @@ p { line-height: 1.55; overflow-wrap: anywhere; }
 @media (max-width: 540px) { .toolbar { flex-wrap: wrap; inline-size: calc(100% - 24px); overflow: visible; } }
 #canvas[data-tool='hand'] { cursor: grab; }
 #canvas[data-tool='comment'], #canvas[data-tool='rectangle'], #canvas[data-tool='connector'] { cursor: crosshair; }
+#canvas[data-tool='select'] #scene > :is([data-kind='rectangle'], [data-kind='text'], [data-kind='image']), #canvas[data-tool='select'] [data-frame-header-hit] { cursor: move; }
 #scene [data-id] { cursor: move; }
 #scene [data-selected='true'] > path:first-child { stroke: var(--accent); stroke-width: 3; }
 .toolbar { display: flex; align-items: center; gap: 2px; position: absolute; z-index: 3; inset-block-start: 20px; inset-inline-start: 50%; translate: -50% 0; max-inline-size: calc(100% - 24px); overflow-x: auto; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 5px; box-shadow: var(--shadow); }

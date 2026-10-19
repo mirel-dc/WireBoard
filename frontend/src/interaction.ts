@@ -1,5 +1,6 @@
 import {CanvasView,members} from './canvas';
 import {wheelIntent} from './navigation';
+import {isDiscreteZoom} from './camera';
 import {connectorTarget,type ConnectorEnd,type ConnectorTarget} from './anchors';
 import type {Anchor,Board,EditState,Element,Kind,Operation} from './types';
 export type Tool='select'|'hand'|'comment'|Kind;
@@ -52,15 +53,16 @@ export class Interaction {
       if(document.querySelector('#app')?.hasAttribute('inert')||document.querySelector('dialog[open]'))return;
       e.preventDefault();if(this.gesture)return;
       const rect=view.svg.getBoundingClientRect(),intent=wheelIntent(e,rect);if(!intent)return;
-      this.finishNudge();if(intent.type==='zoom')view.zoom(intent.factor,e.clientX,e.clientY);else view.pan(intent.dx,intent.dy);
-    },{passive:false});view.svg.addEventListener('contextmenu',e=>e.preventDefault());
+      this.finishNudge();if(intent.type==='zoom'){if(isDiscreteZoom(e))view.animateZoom(intent.factor,e.clientX,e.clientY);else view.zoom(intent.factor,e.clientX,e.clientY);}else view.pan(intent.dx,intent.dy);
+    },{passive:false});view.svg.addEventListener('contextmenu',e=>e.preventDefault());view.svg.addEventListener('pointerleave',()=>view.setHover(null));
   }
   setTool(tool:Tool){if(this.gesture?.type==='connector-end')this.cancel();this.tool=tool;this.connectorFrom=null;this.view.svg.dataset.tool=tool;this.callbacks.tool(tool);}
+  private hover(event:PointerEvent){const target=this.tool==='select'&&!this.space?this.view.elementAt(event.target):undefined;this.view.setHover(target&&target.kind!=='connector'&&target.kind!=='frame'?target.id:null);}
   private begin(g:Gesture){this.gesture=g;this.view.svg.setPointerCapture(g.pointer);}
   private down(event:PointerEvent){
-    this.finishNudge();
+    this.finishNudge();this.view.setHover(null);
     const board=this.callbacks.current();if(!board||this.gesture)return;const point=this.view.worldPoint(event.clientX,event.clientY);let target=this.view.elementAt(event.target);this.downTarget=target?.id??null;this.doubleTap=this.downTarget!==null&&this.downTarget===this.previousTap?this.downTarget:null;this.view.svg.focus();
-    if(this.tool==='hand'||this.space||event.button===1){this.begin({type:'pan',pointer:event.pointerId,x:event.clientX,y:event.clientY,cameraX:this.view.camera.x,cameraY:this.view.camera.y});event.preventDefault();return;}
+    if(this.tool==='hand'||this.space||event.button===1){this.view.stopZoom();this.begin({type:'pan',pointer:event.pointerId,x:event.clientX,y:event.clientY,cameraX:this.view.camera.x,cameraY:this.view.camera.y});event.preventDefault();return;}
     if(this.callbacks.busy()||event.button!==0)return;
     const endpoint=(event.target as globalThis.Element).closest('[data-connector-end]');
     if(endpoint&&this.tool==='select'){
@@ -79,7 +81,7 @@ export class Interaction {
     if(target){const selected=event.shiftKey?this.view.selected.includes(target.id)?this.view.selected.filter(id=>id!==target!.id):[...this.view.selected,target.id]:this.view.selected.includes(target.id)?this.view.selected:[target.id];this.callbacks.select(selected);if(target.kind!=='connector'&&selected.includes(target.id))this.begin({type:'move',pointer:event.pointerId,start:point,ids:[...selected],preview:members(board,selected),board:structuredClone(board),dx:0,dy:0,targets:new Map(),base:this.callbacks.editState()});}
     else{const selected=event.shiftKey?[...this.view.selected]:[];if(!event.shiftKey)this.callbacks.select([]);this.begin({type:'marquee',pointer:event.pointerId,start:point,end:point,selected});}
   }
-  private move(event:PointerEvent){const g=this.gesture;if(!g||g.pointer!==event.pointerId)return;if(g.type==='pan'){this.view.camera.x=g.cameraX+event.clientX-g.x;this.view.camera.y=g.cameraY+event.clientY-g.y;this.view.updateCamera();return;}const point=this.view.worldPoint(event.clientX,event.clientY);
+  private move(event:PointerEvent){const g=this.gesture;if(!g){this.hover(event);return;}if(g.pointer!==event.pointerId)return;if(g.type==='pan'){this.view.camera.x=g.cameraX+event.clientX-g.x;this.view.camera.y=g.cameraY+event.clientY-g.y;this.view.updateCamera();return;}const point=this.view.worldPoint(event.clientX,event.clientY);
     if(g.type==='move'){g.dx=point.x-g.start.x;g.dy=point.y-g.start.y;this.view.previewMove(g.preview,g.dx,g.dy);g.targets.clear();const roots=g.ids.filter(id=>{const e=g.board.elements.find(e=>e.id===id);return e&&e.kind!=='connector'&&!g.ids.some(other=>other!==id&&members(g.board,[other]).includes(id));});for(const id of roots){const e=g.board.elements.find(e=>e.id===id)!;g.targets.set(id,dropTarget(g.board,id,{x:e.x+e.width/2+g.dx,y:e.y+e.height/2+g.dy},g.preview));}this.view.highlightDrop([...g.targets.values()].find(id=>id!==null)??null);}
     else if(g.type==='marquee'){g.end=point;this.view.marquee(Math.min(g.start.x,point.x),Math.min(g.start.y,point.y),Math.abs(point.x-g.start.x),Math.abs(point.y-g.start.y));}
     else if(g.type==='connector-end'){

@@ -10,8 +10,8 @@ test('navigation scroll pans two axes without revision',async({page})=>{
   await expect.poll(async()=>(await camera(page)).y).toBeCloseTo(a.y-80);expect(await camera(page)).toEqual({...a,x:a.x-40,y:a.y-80});expect((await board(page,id)).revision).toBe(1);await expect(page.locator('#undo')).toBeDisabled();
 });
 test('navigation modifier zoom anchors and clamps',async({page})=>{
-  await setup(page);const a=await camera(page),p=await screen(page,300,180);await wheel(page,{deltaY:100,ctrlKey:true,clientX:p.x,clientY:p.y});const b=await camera(page);expect(b.zoom).toBeCloseTo(a.zoom*Math.exp(-.2),6);const same=await screen(page,300,180);expect(same.x).toBeCloseTo(p.x);expect(same.y).toBeCloseTo(p.y);
-  await wheel(page,{deltaY:-2000,metaKey:true,clientX:p.x,clientY:p.y});expect((await camera(page)).zoom).toBe(4);await wheel(page,{deltaY:2000,ctrlKey:true});await wheel(page,{deltaY:2000,ctrlKey:true});expect((await camera(page)).zoom).toBeCloseTo(.1,6);
+  await setup(page);const a=await camera(page),p=await screen(page,300,180);await wheel(page,{deltaY:100,ctrlKey:true,clientX:p.x,clientY:p.y});await expect.poll(async()=>(await camera(page)).zoom).toBeCloseTo(a.zoom*Math.exp(-.2),6);const same=await screen(page,300,180);expect(same.x).toBeCloseTo(p.x);expect(same.y).toBeCloseTo(p.y);
+  await wheel(page,{deltaY:-2000,metaKey:true,clientX:p.x,clientY:p.y});await expect.poll(async()=>(await camera(page)).zoom).toBe(4);await wheel(page,{deltaY:2000,ctrlKey:true});await wheel(page,{deltaY:2000,ctrlKey:true});await expect.poll(async()=>(await camera(page)).zoom).toBeCloseTo(.1,6);
 });
 test('navigation camera limits and modal ignore',async({page})=>{
   const id=await setup(page),a=await camera(page);await page.locator('#new-board').click();expect(await wheel(page,{deltaY:100,ctrlKey:true})).toBe(false);expect(await camera(page)).toEqual(a);await page.locator('#create-dialog').getByRole('button',{name:'Отмена',exact:true}).click();
