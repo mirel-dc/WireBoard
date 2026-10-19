@@ -72,6 +72,22 @@ test('pins_follow_the_camera_without_being_recreated',async({page})=>{
   await expect.poll(async()=>(await pin.boundingBox())!.y).toBeLessThan(before.y-50);
   expect(await pin.evaluate(n=>!!(n as unknown as {mark?:boolean}).mark)).toBe(true);
 });
+test('pins_land_on_their_anchor_after_an_animated_zoom_settles',async({page})=>{
+  const id=await setup(page);await apply(page,id,1,[{op:'comment_create',author:'user',text:'Пин',anchor:{type:'element',elementId:1,u:.25,v:.75}}]);
+  const pin=page.locator('.comment-pin');await expect(pin).toHaveCount(1);const element=(await board(page,id)).elements[0];
+  await page.evaluate(()=>new Promise<void>(resolve=>{
+    const svg=document.querySelector('#canvas')!,r=svg.getBoundingClientRect();
+    svg.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,deltaMode:0,ctrlKey:true,clientX:r.x+300,clientY:r.y+300,bubbles:true,cancelable:true}));
+    // Freeze the clock mid-animation, then let it jump: the last step is then large, as on a slow frame.
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{const frozen=performance.now();performance.now=()=>frozen;resolve();}));
+  }));
+  await page.waitForTimeout(200);await page.evaluate(()=>{delete (performance as {now?:unknown}).now;});
+  await expect.poll(()=>page.evaluate(()=>(document.querySelector('#world') as SVGGElement).transform.baseVal.consolidate()!.matrix.a)).toBeCloseTo(Math.exp(.2),3);
+  await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+  const m=await page.evaluate(()=>{const m=(document.querySelector('#world') as SVGGElement).transform.baseVal.consolidate()!.matrix;return{a:m.a,e:m.e,f:m.f};});
+  const c=(await page.locator('#canvas').boundingBox())!,p=(await pin.boundingBox())!;
+  expect(Math.abs(p.x+p.width/2-(c.x+m.e+m.a*(element.x+element.width*.25)))).toBeLessThan(1);expect(Math.abs(p.y+p.height/2-(c.y+m.f+m.a*(element.y+element.height*.75)))).toBeLessThan(1);
+});
 test('closing_a_thread_returns_focus_to_its_displaced_pin',async({page})=>{
   const id=await setup(page);const anchor={type:'element',elementId:1,u:.5,v:.5};
   await apply(page,id,1,[{op:'comment_create',author:'user',text:'Пин 1',anchor},{op:'comment_create',author:'user',text:'Пин 2',anchor}]);

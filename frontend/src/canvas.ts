@@ -36,7 +36,7 @@ export class CanvasView {
   clear() { this.board=null;this.selected=[];this.hover=null;this.clearPreview();this.renderer.clear();delete this.svg.dataset.board;this.frames.invalidate('overlay');this.frames.invalidate('pins'); }
   updateCamera() { for(const layer of ['camera','overlay','pins','chrome'] as const)this.frames.invalidate(layer); }
   worldPoint(clientX: number, clientY: number) { const rect = this.svg.getBoundingClientRect(); return { x: (clientX - rect.x - this.camera.x) / this.camera.zoom, y: (clientY - rect.y - this.camera.y) / this.camera.zoom }; }
-  pan(dx:number,dy:number){this.zoomAnimation.stop();this.camera={...this.camera,x:clampCoordinate(this.camera.x-dx),y:clampCoordinate(this.camera.y-dy)};this.updateCamera();}
+  pan(dx:number,dy:number){this.camera={...this.camera,x:clampCoordinate(this.camera.x-dx),y:clampCoordinate(this.camera.y-dy)};this.updateCamera();}
   zoom(factor: number, clientX?: number, clientY?: number) { this.zoomAnimation.stop();this.camera=zoomAround(this.camera,this.camera.zoom*factor,this.anchor(clientX,clientY));this.updateCamera(); }
   stopZoom(){this.zoomAnimation.stop();}
   animateZoom(factor:number,clientX?:number,clientY?:number){
@@ -73,7 +73,12 @@ export class CanvasView {
   private linkPoints(e:Element){const p=this.connectorPreview;if(p?.id===e.id){const link=p.board.elements.find(n=>n.id===e.id)!;return connectorPreviewPoints(p.board,link,p.end,p.point,p.target);}return this.board?connectorPoints(this.board,e,n=>this.project(n)):[];}
   private paint(layer:Layer,dirty:Dirty){
     if(layer==='camera'){
-      if(this.zoomAnimation.active){this.camera=this.zoomAnimation.step(this.camera,performance.now());if(this.zoomAnimation.active)this.updateCamera();}
+      if(this.zoomAnimation.active){
+        this.camera=this.zoomAnimation.step(this.camera,performance.now());
+        // The layers below paint later in this flush; the last step must reach them too.
+        for(const layer of ['overlay','pins','chrome'] as const)this.frames.invalidate(layer);
+        if(this.zoomAnimation.active)this.frames.invalidate('camera');
+      }
       const transform=`translate(${this.camera.x} ${this.camera.y}) scale(${this.camera.zoom})`;this.world.setAttribute('transform',transform);document.querySelector('#dots')!.setAttribute('patternTransform',transform);
       if(this.paintedZoom!==this.camera.zoom){this.paintedZoom=this.camera.zoom;this.renderer.setZoom(this.camera.zoom);}
       this.onCamera?.();return;
