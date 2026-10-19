@@ -52,10 +52,11 @@ test('pan_gesture_stops_a_running_zoom_animation',async({page})=>{
   await setup(page);const matrix=()=>page.evaluate(()=>{const m=(document.querySelector('#world') as SVGGElement).transform.baseVal.consolidate()!.matrix;return{a:m.a,e:m.e,f:m.f};});
   const before=await matrix(),b=await box(page);
   await page.evaluate(()=>new Promise<void>(resolve=>{
+    // Own the clock before the wheel: the animation reads its start time from the frozen clock, then "now" jumps to half of the 140 ms zoom, so slow browsers cannot finish it before the pan starts.
+    const t0=performance.now();let now=t0;performance.now=()=>now;
     const svg=document.querySelector('#canvas')!,r=svg.getBoundingClientRect();
     svg.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,deltaMode:0,ctrlKey:true,clientX:r.x+300,clientY:r.y+300,bubbles:true,cancelable:true}));
-    // Freeze the clock mid-animation so slow browsers cannot finish the 140 ms zoom before the pan starts.
-    requestAnimationFrame(()=>requestAnimationFrame(()=>{const frozen=performance.now();performance.now=()=>frozen;resolve();}));
+    now=t0+70;requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()));
   }));
   await page.mouse.move(b.x+400,b.y+300);await page.mouse.down({button:'middle'});await page.mouse.move(b.x+440,b.y+300,{steps:2});await page.mouse.up({button:'middle'});
   await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));const panned=await matrix();
