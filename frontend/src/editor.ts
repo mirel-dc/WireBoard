@@ -7,7 +7,8 @@ import { installIcons } from './icons';
 import { api, ApiError } from './api';
 import { CanvasView, orderedFrames } from './canvas';
 import { Interaction, type Tool } from './interaction';
-import { showBoards, showSlides, showProperties } from './panels';
+import { showBoards, showProperties } from './panels';
+import { SlideList } from './slides';
 import { Presentation } from './presentation';
 import type { Board, BoardEvent, BoardSummary, CommentOperation, Operation,Actor,EditState } from './types';
 function browserActor():Actor {let id:string=crypto.randomUUID();try{const saved=localStorage.getItem('wireboard:actorId');if(saved&&saved.length<=128)id=saved;else localStorage.setItem('wireboard:actorId',id);}catch{}return {id,source:'user'};}
@@ -18,6 +19,7 @@ export class Editor {
   private selectionEpoch=0;private pasteCount=0;private pasteIdentity='';
   private draft: { id: number; revision: number; board: string; base:EditState } | null = null;
   textEditor = new InlineTextEditor();
+  slides = new SlideList(el('slides'), el('slide-count'), id => { this.select([id]); this.view.fit(id); });private panelKey='';
   comments = new Comments(this.view, {current:()=>this.board,commit:(board,ops,revision)=>this.commitComments(board,ops,revision),report:error=>this.report(error),confirm:async()=>{if(this.queue?.mode==='uncertain')await this.queue.retry();else if(this.queue?.mode==='conflict')this.queue.discard();},anchorMode:()=>this.interaction.setTool('comment')});
   interaction = new Interaction(this.view, { current: () => this.board, editState:()=>this.queue!.projectedState(), busy: () => this.opening || !!this.draft, apply: (ops, revision, base) => this.apply(ops, revision, base), create:(element,base)=>this.createObjects([{op:'create',element}],[base.board.nextId],base,'Создание объекта'),select: ids => this.select(ids), edit: id => this.editText(id), comment: (anchor, point) => this.comments.place(anchor, point), tool: tool => this.tool(tool), changed: () => { if (this.queued) void this.refresh(); }, report: error => this.report(error) });
   presentation = new Presentation(error => this.report(error));
@@ -60,14 +62,14 @@ export class Editor {
   }
   private renderBoards(){const search=el<HTMLInputElement>('board-search').value.trim().toLocaleLowerCase();const boards=this.boards.filter(board=>board.title.toLocaleLowerCase().includes(search));el('board-count').textContent=String(this.boards.length);showBoards(boards,this.board?.id,id=>{void this.open(id);});}
   private async reloadBoards() { this.boards = await api.list(); this.renderBoards(); }
-  private empty() { window.clearTimeout(this.saveTimer);this.saveView();this.board = null;this.queue=null; this.view.clear(); el('board-title').textContent = 'Выберите доску'; el('property-content').textContent = 'Откройте доску из библиотеки.'; el('slides').replaceChildren();el('slide-count').textContent='0'; el('canvas-hint').textContent='Выберите доску слева или создайте новую';el('canvas-hint').hidden = false; this.comments.update(); el('context-toolbar').hidden=true;this.renderBoards();document.title='Wireboard — локальная библиотека'; }
+  private empty() { window.clearTimeout(this.saveTimer);this.saveView();this.board = null;this.queue=null; this.view.clear(); el('board-title').textContent = 'Выберите доску'; el('property-content').textContent = 'Откройте доску из библиотеки.'; this.slides.clear(); el('canvas-hint').textContent='Выберите доску слева или создайте новую';el('canvas-hint').hidden = false; this.comments.update(); el('context-toolbar').hidden=true;this.renderBoards();document.title='Wireboard — локальная библиотека'; }
   async open(id: string, push = true) {
     window.clearTimeout(this.saveTimer);this.saveView();
     if (!this.canNavigate()) { this.boardAddress(this.board?.id??null); return; }
     const generation = ++this.loading; this.opening=true; this.comments.cancelAnchor();this.interaction.setTool('select'); this.status('Открываем доску…');
     try { if(!this.boards.some(board=>board.id===id))await this.reloadBoards();const state = await api.editState(id,this.actor.id);const board=state.board; if (generation !== this.loading) return; const saved = this.savedView(id); this.board = board; this.view.selected = saved?.selected ?? []; this.view.setBoard(board);this.queue=new CommandQueue(this.actor,state,{apply:api.applyState,history:api.historyState,editState:api.editState},()=>this.syncQueue());this.syncQueue(); if (saved) { this.view.camera = saved.camera; this.view.updateCamera(); } else this.view.fit(); if(innerWidth<900)document.querySelector('.workspace')!.classList.add('sidebar-hidden'); this.boardAddress(id,push);this.panels(); this.saveView(); await this.reloadBoards();document.title=`${board.title} — Wireboard`; this.status('Все изменения сохранены'); } catch (error) { this.boardAddress(this.board?.id??null);this.report(error); } finally {this.opening=false;if(this.queued)await this.refresh();}
   }
-  private panels(force = false) { if (!this.board) return; el('board-title').textContent = this.board.title; showSlides(this.board, this.view.selected, id => { this.select([id]); this.view.fit(id); }); const base=this.queue?.projectedState();showProperties(this.board, this.view.selected, (ops, revision) => this.apply(ops, revision, base), id => this.editText(id), force,()=>{const focused=this.queue!.projectedState();return(ops,revision)=>this.apply(ops,revision,focused);}); this.context(); this.comments.update(); }
+  private panels(force = false) { if (!this.board) return; el('board-title').textContent = this.board.title; this.slides.update(this.board, this.view.selected); const base=this.queue?.projectedState();showProperties(this.board, this.view.selected, (ops, revision) => this.apply(ops, revision, base), id => this.editText(id), force,()=>{const focused=this.queue!.projectedState();return(ops,revision)=>this.apply(ops,revision,focused);}); this.context(); this.comments.update(); }
   select(ids: number[]) { this.interaction.finishNudge();this.selectionEpoch++;this.view.setSelection(ids); this.panels(); this.scheduleSaveView(); }
   private createObjects(operations:Operation[],ids:number[],base:EditState,label:string){
     const queue=this.queue;if(!queue||this.opening)return;
@@ -112,7 +114,7 @@ export class Editor {
   }
   private syncQueue() {
     const queue=this.queue;if(!queue)return;
-    this.board=queue.projected();this.view.project(this.board);this.panels();
+    this.board=queue.projected();this.view.project(this.board);const panelKey=`${queue.confirmed.board.id}|${queue.confirmed.board.revision}|${this.view.selected.join(',')}`;if(panelKey!==this.panelKey){this.panelKey=panelKey;this.panels();}
     const history=queue.summary;
     for(const [id,action,verb]of [['undo',history.undo,'Отменить'],['redo',history.redo,'Повторить']]as const){const button=el<HTMLButtonElement>(id);button.disabled=!action;button.title=action?`${verb}: ${action.label}`:`${verb}: история пуста`;button.setAttribute('aria-description',button.title);}
     const problem=queue.mode==='uncertain'||queue.mode==='conflict';el('operation-return').hidden=!problem;

@@ -99,3 +99,21 @@ test('sidebar_refreshes_after_a_reload_event_that_follows_a_missed_change',async
   await page.evaluate(()=>{const w=window as unknown as {sources:EventSource[];dropBoard:boolean};w.dropBoard=false;for(const source of w.sources)source.dispatchEvent(new MessageEvent('reload',{data:'{}'}));});
   await expect(page.locator('#boards')).toContainText(title);
 });
+test('saving_keeps_untouched_pins_thumbnails_and_text',async({page})=>{
+  const id=await setup(page);
+  await apply(page,id,1,[{op:'create',element:{kind:'frame',x:600,y:60,width:400,height:260,text:'Слайд'}},{op:'create',element:{kind:'rectangle',x:640,y:120,width:200,height:112,text:'Внутри'}},{op:'comment_create',author:'user',text:'Пин',anchor:{type:'element',elementId:3,u:.5,v:.5}}]);
+  await expect(page.locator('.comment-pin')).toHaveCount(1);await expect(page.locator('#slides img')).toHaveAttribute('src',/^data:image\/svg/);
+  const nodes='[document.querySelector(".comment-pin"),document.querySelector("#slides img"),document.querySelector("#scene [data-id=\\"3\\"] text")]';
+  await page.evaluate(`${nodes}.forEach(n=>{n.mark=true;})`);
+  await drag(page,40,0);await expect.poll(async()=>(await board(page,id)).revision).toBe(3);await expect(page.locator('#status')).toHaveText('Все изменения сохранены');await page.waitForTimeout(1700);
+  expect(await page.evaluate(`${nodes}.map(n=>!!n?.mark)`)).toEqual([true,true,true]);
+});
+test('a_previous_board_thumbnail_never_lands_in_the_next_board',async({page})=>{
+  const id=await setup(page);let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});
+  await page.route(/\/render\?format=svg&frame=/,async route=>{await held;await route.continue();});
+  await apply(page,id,1,[{op:'create',element:{kind:'frame',x:600,y:60,width:400,height:260,text:'Слайд'}}]);await expect(page.locator('#slides .slide-row')).toHaveCount(1);
+  const other=await(await page.request.post('/api/boards',{headers:{Origin:'http://127.0.0.1:19843'},data:{title:`Other ${Date.now()}`}})).json();
+  const row=page.locator('#boards button').filter({hasText:other.title});await expect(row).toBeVisible();await row.click();
+  await expect(page.locator('#canvas')).toHaveAttribute('data-board',other.id);release();await page.waitForTimeout(500);
+  await expect(page.locator('#slides .slide-row')).toHaveCount(0);await expect(page.locator('#slides img')).toHaveCount(0);
+});

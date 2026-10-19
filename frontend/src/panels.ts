@@ -1,5 +1,5 @@
 import type { Board, BoardSummary, Element, Operation } from './types';
-import { orderedFrames,members } from './canvas';
+import { members } from './canvas';
 import { icon } from './icons';
 const names: Record<Element['kind'], string> = { rectangle: 'Блок', text: 'Текст', connector: 'Связь', frame: 'Фрейм', image: 'Изображение' };
 function node<K extends keyof HTMLElementTagNameMap>(kind: K, text?: string, className?: string) { const el = document.createElement(kind); if (text !== undefined) el.textContent = text; if (className) el.className = className; return el; }
@@ -13,11 +13,6 @@ export function showBoards(boards: BoardSummary[], active: string | undefined, o
     button.append(icon('boards'),details);button.onclick=()=>open(board.id);list.append(button);
   }
   if(!boards.length)list.append(node('p','Доски не найдены','empty-slides'));
-}
-export function showSlides(board: Board, selected: number[], fit: (id: number) => void) {
-  const list = document.querySelector('#slides')!; list.replaceChildren(); const frames = orderedFrames(board); document.querySelector('#slide-count')!.textContent = String(frames.length);
-  frames.forEach((frame, index) => { const button = node('button', undefined, `slide-row${selected.includes(frame.id) ? ' active' : ''}`); const thumbnail=node('img'); thumbnail.alt='';thumbnail.loading='lazy';thumbnail.src=`/api/boards/${board.id}/render?format=svg&frame=${frame.id}#revision=${board.revision}`; button.append(thumbnail,node('span', String(index + 1).padStart(2, '0'), 'slide-number'), node('span', frame.text || `Слайд ${index + 1}`)); button.onclick = () => fit(frame.id); list.append(button); });
-  if (!frames.length) list.append(node('p', 'Создайте первый слайд инструментом F. Он станет рамкой для вашей истории.', 'empty-slides'));
 }
 export function showProperties(board: Board, selected: number[], apply: (ops: Operation[], revision?: number) => Promise<boolean>, edit: (id: number) => void, force = false, capture?:()=>(ops:Operation[],revision?:number)=>Promise<boolean>) {
   if (!force && document.activeElement?.closest('#properties') && document.activeElement.matches('input,select')) return;
