@@ -69,16 +69,14 @@ test('pins_follow_the_camera_without_being_recreated',async({page})=>{
   await expect.poll(async()=>(await pin.boundingBox())!.y).toBeLessThan(before.y-50);
   expect(await pin.evaluate(n=>!!(n as unknown as {mark?:boolean}).mark)).toBe(true);
 });
-test('popover_anchors_to_displaced_pin_not_leader',async({page})=>{
-  const id=await setup(page);
-  await apply(page,id,1,[{op:'comment_create',author:'user',text:'Пин 1',anchor:{type:'element',elementId:1,u:.5,v:.5}},{op:'comment_create',author:'user',text:'Пин 2',anchor:{type:'element',elementId:1,u:.5,v:.5}}]);
+test('closing_a_thread_returns_focus_to_its_displaced_pin',async({page})=>{
+  const id=await setup(page);const anchor={type:'element',elementId:1,u:.5,v:.5};
+  await apply(page,id,1,[{op:'comment_create',author:'user',text:'Пин 1',anchor},{op:'comment_create',author:'user',text:'Пин 2',anchor}]);
   await expect(page.locator('.comment-pin')).toHaveCount(2);
-  const info=await page.evaluate(()=>{
-    const scopedEl=document.querySelector('.comment-pin[data-thread="2"]');
-    const unscopedEl=document.querySelector('[data-thread="2"]');
-    return{scopedTag:scopedEl?.tagName,unscopedTag:unscopedEl?.tagName,sameEl:scopedEl===unscopedEl,scopedClass:scopedEl?.className,unscopedClass:unscopedEl?.className};
-  });
-  expect(info.scopedTag).toBe('BUTTON');
-  expect(info.unscopedTag).toBe('SPAN');
-  expect(info.sameEl).toBe(false);
+  await page.locator('.comment-pin[data-thread="1"]').click();await expect(page.locator('#comments')).toBeVisible();
+  await page.getByRole('button',{name:'Все комментарии'}).click();await page.locator('.thread-row').filter({hasText:'Пин 2'}).click();
+  await expect(page.locator('#comments-heading')).toHaveText('Комментарий #2');
+  await expect(page.locator('.pin-leader[data-thread="1"]')).toHaveCount(1);
+  await page.locator('#comments-close').click();
+  await expect(page.locator('.comment-pin[data-thread="1"]')).toBeFocused();
 });
