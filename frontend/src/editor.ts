@@ -69,7 +69,8 @@ export class Editor {
     const generation = ++this.loading; this.opening=true; this.comments.cancelAnchor();this.interaction.setTool('select'); this.status('Открываем доску…');
     try { if(!this.boards.some(board=>board.id===id))await this.reloadBoards();const state = await api.editState(id,this.actor.id);const board=state.board; if (generation !== this.loading) return; const saved = this.savedView(id); this.board = board; this.view.selected = saved?.selected ?? []; this.view.setBoard(board);this.queue=new CommandQueue(this.actor,state,{apply:api.applyState,history:api.historyState,editState:api.editState},()=>this.syncQueue());this.syncQueue(); if (saved) { this.view.camera = saved.camera; this.view.updateCamera(); } else this.view.fit(); if(innerWidth<900)document.querySelector('.workspace')!.classList.add('sidebar-hidden'); this.boardAddress(id,push);this.panels(); this.saveView(); await this.reloadBoards();document.title=`${board.title} — Wireboard`; this.status('Все изменения сохранены'); } catch (error) { this.boardAddress(this.board?.id??null);this.report(error); } finally {this.opening=false;if(this.queued)await this.refresh();}
   }
-  private panels(force = false) { if (!this.board) return; el('board-title').textContent = this.board.title; this.slides.update(this.board, this.view.selected); const base=this.queue?.projectedState();showProperties(this.board, this.view.selected, (ops, revision) => this.apply(ops, revision, base), id => this.editText(id), force,()=>{const focused=this.queue!.projectedState();return(ops,revision)=>this.apply(ops,revision,focused);}); this.context(); this.comments.update(); }
+  private panelState(){const queue=this.queue;return queue?`${queue.confirmed.board.id}|${queue.confirmed.board.revision}|${this.view.selected.join(',')}`:'';}
+  private panels(force = false) { if (!this.board) return; this.panelKey=this.panelState(); el('board-title').textContent = this.board.title; this.slides.update(this.board, this.view.selected); const base=this.queue?.projectedState();showProperties(this.board, this.view.selected, (ops, revision) => this.apply(ops, revision, base), id => this.editText(id), force,()=>{const focused=this.queue!.projectedState();return(ops,revision)=>this.apply(ops,revision,focused);}); this.context(); this.comments.update(); }
   select(ids: number[]) { this.interaction.finishNudge();this.selectionEpoch++;this.view.setSelection(ids); this.panels(); this.scheduleSaveView(); }
   private createObjects(operations:Operation[],ids:number[],base:EditState,label:string){
     const queue=this.queue;if(!queue||this.opening)return;
@@ -114,7 +115,7 @@ export class Editor {
   }
   private syncQueue() {
     const queue=this.queue;if(!queue)return;
-    this.board=queue.projected();this.view.project(this.board);const panelKey=`${queue.confirmed.board.id}|${queue.confirmed.board.revision}|${this.view.selected.join(',')}`;if(panelKey!==this.panelKey){this.panelKey=panelKey;this.panels();}
+    this.board=queue.projected();this.view.project(this.board);if(this.panelState()!==this.panelKey)this.panels();
     const history=queue.summary;
     for(const [id,action,verb]of [['undo',history.undo,'Отменить'],['redo',history.redo,'Повторить']]as const){const button=el<HTMLButtonElement>(id);button.disabled=!action;button.title=action?`${verb}: ${action.label}`:`${verb}: история пуста`;button.setAttribute('aria-description',button.title);}
     const problem=queue.mode==='uncertain'||queue.mode==='conflict';el('operation-return').hidden=!problem;
@@ -147,7 +148,7 @@ export class Editor {
       if(this.draft){this.status('Доска изменилась · ваш черновик сохранён');el('draft-message').textContent='Другой клиент изменил доску. Ваш текст остался в черновике.';}
     }catch(error){this.report(error);}finally{this.refreshing=false;if(this.queued&&!this.interaction.active&&!this.opening)window.setTimeout(()=>{void this.refresh();},25);}
   }
-  private editText(id: number) { if (!this.board || !this.queue || this.opening) return; if(this.draft){if(this.draft.id!==id)this.report(new Error('Сначала сохраните или отмените текущий текст.'));el<HTMLTextAreaElement>('text-draft').focus();return;} const e = this.board.elements.find(e => e.id === id); if (!e) return; this.draft = { id, revision: this.board.revision, board: this.board.id,base:this.queue.projectedState() }; el<HTMLTextAreaElement>('text-draft').value = e.text; el('draft-message').textContent = ''; el('draft-retry').hidden = true; el('draft-save').hidden = false; this.textEditor.show(e,this.view); }
+  private editText(id: number) { if (!this.board || !this.queue || this.opening) return; if(this.draft){if(this.draft.id!==id)this.report(new Error('Сначала сохраните или отмените текущий текст.'));el<HTMLTextAreaElement>('text-draft').focus();return;} const e = this.board.elements.find(e => e.id === id); if (!e) return; this.draft = { id, revision: this.board.revision, board: this.board.id,base:structuredClone(this.queue.projectedState()) }; el<HTMLTextAreaElement>('text-draft').value = e.text; el('draft-message').textContent = ''; el('draft-retry').hidden = true; el('draft-save').hidden = false; this.textEditor.show(e,this.view); }
   // discard and a conflict's remote view change the projection without a new revision or selection
   private discard() { this.panelKey='';this.queue?.discard(); }
   private async saveText(retry:boolean) {
