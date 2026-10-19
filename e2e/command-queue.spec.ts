@@ -77,8 +77,8 @@ test('discard_conflict_blocks_a_dependent_gesture_without_stale_send',async({pag
 test('late_snapshot_does_not_erase_projection',async({page})=>{
   const id=await setup(page);const initial=await box(page);let release!:()=>void,seen!:()=>void;
   const held=new Promise<void>(resolve=>{release=resolve;}),captured=new Promise<void>(resolve=>{seen=resolve;});let first=true;
-  await page.route(`**/api/boards/${id}/render?format=svg`,async route=>{if(!first){await route.continue();return;}first=false;const response=await route.fetch();seen();await held;await route.fulfill({response});});
+  await page.route(`**/api/boards/${id}/edit-state**`,async route=>{if(!first||route.request().url().includes('commandId=')){await route.continue();return;}first=false;const response=await route.fetch();seen();await held;await route.fulfill({response});});
   await apply(page,id,1,[{op:'update',id:1,patch:{text:'Agent snapshot'}}]);await captured;await drag(page,40,0);await expect.poll(async()=>(await board(page,id)).revision).toBe(3);await expect(page.locator('#status')).toHaveText('Все изменения сохранены');
-  const late=page.waitForResponse(r=>r.url().includes(`/api/boards/${id}/render?format=svg`)&&r.headers()['x-board-revision']==='2');release();await(await late).finished();await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+  const late=page.waitForResponse(r=>r.url().includes(`/api/boards/${id}/edit-state`)&&!r.url().includes('commandId='));release();await(await late).finished();await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
   await expect(page.locator('#scene')).toContainText('Agent snapshot');await expect.poll(async()=>(await box(page)).x).toBeCloseTo(initial.x+40,0);expect((await board(page,id)).elements[0].x).toBe(140);
 });

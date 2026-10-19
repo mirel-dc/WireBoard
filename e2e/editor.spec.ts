@@ -116,6 +116,7 @@ test('camera and selection survive reopening a board', async ({ page }) => {
   await page.locator('#canvas').click({ position: { x: 240, y: 230 } });
   await expect(page.locator('#status')).toHaveText('Все изменения сохранены');
   await page.locator('#zoom-in').click();
+  await expect(page.locator('#world')).toHaveAttribute('transform', /scale\(1\.2\)/);
   const camera = await page.locator('#world').getAttribute('transform');
   await page.reload();
   await expect(page.locator('#status')).toHaveText('Все изменения сохранены');
