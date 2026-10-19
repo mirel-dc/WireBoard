@@ -128,7 +128,7 @@ export class Comments {
       let origin = { x: area.x + this.view.camera.x + point.x * this.view.camera.zoom, y: area.y + this.view.camera.y + point.y * this.view.camera.zoom };
       const pin = target.threadId === undefined ? null : this.layer.querySelector<HTMLButtonElement>(`.comment-pin[data-thread="${target.threadId}"]`);
       if (pin) { const rect = pin.getBoundingClientRect(); origin = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }; }
-      if (pin || (origin.x >= area.left && origin.x <= area.right && origin.y >= area.top && origin.y <= area.bottom)) {
+      if (origin.x >= area.left && origin.x <= area.right && origin.y >= area.top && origin.y <= area.bottom) {
         x = origin.x + 14; y = origin.y + 14;
         if (x + box.width > right) x = origin.x - box.width - 14;
         if (y + box.height > bottom) y = origin.y - box.height - 14;

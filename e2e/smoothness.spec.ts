@@ -73,8 +73,12 @@ test('popover_anchors_to_displaced_pin_not_leader',async({page})=>{
   const id=await setup(page);
   await apply(page,id,1,[{op:'comment_create',author:'user',text:'Пин 1',anchor:{type:'element',elementId:1,u:.5,v:.5}},{op:'comment_create',author:'user',text:'Пин 2',anchor:{type:'element',elementId:1,u:.5,v:.5}}]);
   await expect(page.locator('.comment-pin')).toHaveCount(2);
-  const scoped=await page.evaluate(()=>document.querySelector('.comment-pin[data-thread="2"]')?.tagName);
-  const unscoped=await page.evaluate(()=>document.querySelector('[data-thread="2"]')?.tagName);
-  expect(scoped).toBe('BUTTON');
-  expect(unscoped).toBe('SPAN');
+  const info=await page.evaluate(()=>{
+    const scopedEl=document.querySelector('.comment-pin[data-thread="2"]');
+    const unscopedEl=document.querySelector('[data-thread="2"]');
+    return{scopedTag:scopedEl?.tagName,unscopedTag:unscopedEl?.tagName,sameEl:scopedEl===unscopedEl,scopedClass:scopedEl?.className,unscopedClass:unscopedEl?.className};
+  });
+  expect(info.scopedTag).toBe('BUTTON');
+  expect(info.unscopedTag).toBe('SPAN');
+  expect(info.sameEl).toBe(false);
 });
