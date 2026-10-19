@@ -108,12 +108,27 @@ test('saving_keeps_untouched_pins_thumbnails_and_text',async({page})=>{
   await drag(page,40,0);await expect.poll(async()=>(await board(page,id)).revision).toBe(3);await expect(page.locator('#status')).toHaveText('Все изменения сохранены');await page.waitForTimeout(1700);
   expect(await page.evaluate(`${nodes}.map(n=>!!n?.mark)`)).toEqual([true,true,true]);
 });
+test('discarding_a_conflict_repaints_the_properties_panel',async({page})=>{
+  const id=await setup(page);const b=await box(page);await page.mouse.click(b.x+35,b.y+35);
+  const fill=page.getByLabel('Заливка');await expect(fill).toBeAttached();
+  let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});let first=true;
+  await page.route(`**/api/boards/${id}/apply**`,async route=>{if(first){first=false;await held;}await route.continue();});
+  await fill.evaluate((input:HTMLInputElement)=>{input.value='#ff0000';input.dispatchEvent(new Event('change'));});await expect(page.locator('#scene [data-id="1"] rect').first()).toHaveAttribute('fill','#ff0000');
+  await apply(page,id,1,[{op:'update',id:1,patch:{fill:'#00aa00'}}]);release();
+  await expect(page.locator('#operation-dialog')).toBeVisible();await page.locator('#operation-discard').click();await expect(page.locator('#operation-dialog')).not.toBeVisible();
+  await expect(page.locator('#scene [data-id="1"] rect').first()).not.toHaveAttribute('fill','#ff0000');await expect(fill).not.toHaveValue('#ff0000');
+});
 test('a_previous_board_thumbnail_never_lands_in_the_next_board',async({page})=>{
-  const id=await setup(page);let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});
-  await page.route(/\/render\?format=svg&frame=/,async route=>{await held;await route.continue();});
-  await apply(page,id,1,[{op:'create',element:{kind:'frame',x:600,y:60,width:400,height:260,text:'Слайд'}}]);await expect(page.locator('#slides .slide-row')).toHaveCount(1);
+  const id=await setup(page);let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});let intercepted=false;
+  await page.route(/\/render\?format=svg&frame=/,async route=>{if(route.request().url().includes(id)){intercepted=true;await held;}await route.continue();});
   const other=await(await page.request.post('/api/boards',{headers:{Origin:'http://127.0.0.1:19843'},data:{title:`Other ${Date.now()}`}})).json();
+  await apply(page,other.id,0,[{op:'create',element:{kind:'rectangle',x:100,y:100}},{op:'create',element:{kind:'frame',x:600,y:60,width:500,height:300,text:'Бета'}}]);
+  await apply(page,id,1,[{op:'create',element:{kind:'frame',x:600,y:60,width:400,height:260,text:'Альфа'}}]);
+  await expect(page.locator('#slides .slide-row')).toHaveCount(1);await expect.poll(()=>intercepted).toBe(true);
   const row=page.locator('#boards button').filter({hasText:other.title});await expect(row).toBeVisible();await row.click();
-  await expect(page.locator('#canvas')).toHaveAttribute('data-board',other.id);release();await page.waitForTimeout(500);
-  await expect(page.locator('#slides .slide-row')).toHaveCount(0);await expect(page.locator('#slides img')).toHaveCount(0);
+  await expect(page.locator('#canvas')).toHaveAttribute('data-board',other.id);await expect(page.locator('#slides .slide-row')).toHaveCount(1);
+  release();
+  const thumbnail=async()=>decodeURIComponent(await page.locator('#slides img').getAttribute('src')??'');
+  // the render is sized to its frame (text becomes glyph paths), so the size tells the boards apart
+  await expect.poll(thumbnail).toContain('width="500" height="300"');expect(await thumbnail()).not.toContain('width="400" height="260"');
 });

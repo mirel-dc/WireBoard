@@ -148,11 +148,13 @@ export class Editor {
     }catch(error){this.report(error);}finally{this.refreshing=false;if(this.queued&&!this.interaction.active&&!this.opening)window.setTimeout(()=>{void this.refresh();},25);}
   }
   private editText(id: number) { if (!this.board || !this.queue || this.opening) return; if(this.draft){if(this.draft.id!==id)this.report(new Error('Сначала сохраните или отмените текущий текст.'));el<HTMLTextAreaElement>('text-draft').focus();return;} const e = this.board.elements.find(e => e.id === id); if (!e) return; this.draft = { id, revision: this.board.revision, board: this.board.id,base:this.queue.projectedState() }; el<HTMLTextAreaElement>('text-draft').value = e.text; el('draft-message').textContent = ''; el('draft-retry').hidden = true; el('draft-save').hidden = false; this.textEditor.show(e,this.view); }
+  // discard and a conflict's remote view change the projection without a new revision or selection
+  private discard() { this.panelKey='';this.queue?.discard(); }
   private async saveText(retry:boolean) {
     if(!this.draft||!this.queue||this.busy)return;const draft=this.draft;this.busy=true;
     const operations:Operation[]=[{op:'update',id:draft.id,patch:{text:el<HTMLTextAreaElement>('text-draft').value,title:el<HTMLInputElement>('title-draft').value}}];
     try {
-      if(retry){if(this.queue.mode==='uncertain'){await this.queue.retry();return;}this.queue.discard();this.queue.accept(await api.editState(draft.board,this.actor.id));}
+      if(retry){if(this.queue.mode==='uncertain'){await this.queue.retry();return;}this.discard();this.queue.accept(await api.editState(draft.board,this.actor.id));}
       const base=retry?this.queue.projectedState():draft.base;
       await this.queue.enqueue({label:'Изменение текста',operations,guards:makeGuards(base,operations)},commandId=>{
         if(this.draft!==draft)return;
@@ -202,10 +204,10 @@ export class Editor {
     el('create-form').onsubmit = event => { event.preventDefault(); void (async () => { try { const board = await api.create(el<HTMLInputElement>('create-title').value); el<HTMLDialogElement>('create-dialog').close(); await this.open(board.id); } catch (error) { this.report(error); } })(); };
     el('board-title').onclick = () => { if (!this.board) return; el<HTMLInputElement>('rename-title').value = this.board.title; el<HTMLDialogElement>('rename-dialog').showModal(); };
     el('rename-form').onsubmit = event => { event.preventDefault(); void this.apply([{ op: 'rename', title: el<HTMLInputElement>('rename-title').value }]).then(saved => { if (saved) el<HTMLDialogElement>('rename-dialog').close(); }); };
-    el('operation-retry').onclick=()=>{void this.queue?.retry().then(()=>{if(this.queue?.mode==='conflict')el<HTMLDialogElement>('operation-dialog').close();});};
-    el('operation-discard').onclick=()=>{this.queue?.discard();};
+    el('operation-retry').onclick=()=>{this.panelKey='';void this.queue?.retry().then(()=>{if(this.queue?.mode==='conflict')el<HTMLDialogElement>('operation-dialog').close();});};
+    el('operation-discard').onclick=()=>this.discard();
     el('operation-return').onclick=()=>el<HTMLDialogElement>('operation-dialog').showModal();
-    el<HTMLDialogElement>('operation-dialog').addEventListener('cancel',event=>{if(this.queue?.mode==='uncertain')event.preventDefault();else this.queue?.discard();});
+    el<HTMLDialogElement>('operation-dialog').addEventListener('cancel',event=>{if(this.queue?.mode==='uncertain')event.preventDefault();else this.discard();});
     el('text-form').onsubmit = event => { event.preventDefault(); void this.saveText(false); }; el('draft-retry').onclick = () => { void this.saveText(true); };
     document.querySelectorAll<HTMLButtonElement>('[data-close]').forEach(button => button.onclick = () => button.closest('dialog')!.close());
     el('draft-cancel').onclick=()=>{this.draft=null;this.textEditor.close();}; el('text-form').addEventListener('keydown',event=>{if(event.key==='Escape'){event.stopPropagation();this.draft=null;this.textEditor.close();}if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();void this.saveText(!el('draft-retry').hidden);}});
