@@ -108,7 +108,7 @@ export class Comments {
   }
   private showList() { const board = this.cb.current(); if (!board) return; this.selections.delete(board.id); this.show({ type: 'list' }); }
   toggle() { if (!this.panel.hidden && this.popupTarget.type === 'list') this.close(); else this.showList(); }
-  close(restoreFocus = true) { this.endPopupDrag(); this.panel.hidden = true; document.getElementById('comments-open')!.setAttribute('aria-expanded', 'false');const pin=this.returnPin?.board===this.cb.current()?.id?this.layer.querySelector<HTMLButtonElement>(`[data-thread="${this.returnPin?.id}"]`):null;const focus=pin??(this.returnFocus?.isConnected&&!this.panel.contains(this.returnFocus)?this.returnFocus:document.getElementById('comments-open'));if(restoreFocus)focus?.focus({preventScroll:true}); }
+  close(restoreFocus = true) { this.endPopupDrag(); this.panel.hidden = true; document.getElementById('comments-open')!.setAttribute('aria-expanded', 'false');const pin=this.returnPin?.board===this.cb.current()?.id?this.layer.querySelector<HTMLButtonElement>(`.comment-pin[data-thread="${this.returnPin?.id}"]`):null;const focus=pin??(this.returnFocus?.isConnected&&!this.panel.contains(this.returnFocus)?this.returnFocus:document.getElementById('comments-open'));if(restoreFocus)focus?.focus({preventScroll:true}); }
   private position() {
     if (this.panel.hidden) return;
     const viewport = window.visualViewport;
@@ -126,9 +126,9 @@ export class Comments {
       const point = target.point ?? this.anchorPoint(target.anchor, thread);
       const area = this.view.svg.getBoundingClientRect();
       let origin = { x: area.x + this.view.camera.x + point.x * this.view.camera.zoom, y: area.y + this.view.camera.y + point.y * this.view.camera.zoom };
-      const pin = target.threadId === undefined ? null : this.layer.querySelector<HTMLButtonElement>(`[data-thread="${target.threadId}"]`);
+      const pin = target.threadId === undefined ? null : this.layer.querySelector<HTMLButtonElement>(`.comment-pin[data-thread="${target.threadId}"]`);
       if (pin) { const rect = pin.getBoundingClientRect(); origin = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }; }
-      if (origin.x >= area.left && origin.x <= area.right && origin.y >= area.top && origin.y <= area.bottom) {
+      if (pin || (origin.x >= area.left && origin.x <= area.right && origin.y >= area.top && origin.y <= area.bottom)) {
         x = origin.x + 14; y = origin.y + 14;
         if (x + box.width > right) x = origin.x - box.width - 14;
         if (y + box.height > bottom) y = origin.y - box.height - 14;

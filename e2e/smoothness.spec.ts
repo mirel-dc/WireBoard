@@ -69,3 +69,12 @@ test('pins_follow_the_camera_without_being_recreated',async({page})=>{
   await expect.poll(async()=>(await pin.boundingBox())!.y).toBeLessThan(before.y-50);
   expect(await pin.evaluate(n=>!!(n as unknown as {mark?:boolean}).mark)).toBe(true);
 });
+test('popover_anchors_to_displaced_pin_not_leader',async({page})=>{
+  const id=await setup(page);
+  await apply(page,id,1,[{op:'comment_create',author:'user',text:'Пин 1',anchor:{type:'element',elementId:1,u:.5,v:.5}},{op:'comment_create',author:'user',text:'Пин 2',anchor:{type:'element',elementId:1,u:.5,v:.5}}]);
+  await expect(page.locator('.comment-pin')).toHaveCount(2);
+  const scoped=await page.evaluate(()=>document.querySelector('.comment-pin[data-thread="2"]')?.tagName);
+  const unscoped=await page.evaluate(()=>document.querySelector('[data-thread="2"]')?.tagName);
+  expect(scoped).toBe('BUTTON');
+  expect(unscoped).toBe('SPAN');
+});
