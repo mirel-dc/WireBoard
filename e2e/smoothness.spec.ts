@@ -54,10 +54,11 @@ test('pan_gesture_stops_a_running_zoom_animation',async({page})=>{
   await page.evaluate(()=>new Promise<void>(resolve=>{
     const svg=document.querySelector('#canvas')!,r=svg.getBoundingClientRect();
     svg.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,deltaMode:0,ctrlKey:true,clientX:r.x+300,clientY:r.y+300,bubbles:true,cancelable:true}));
-    requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()));
+    // Freeze the clock mid-animation so slow browsers cannot finish the 140 ms zoom before the pan starts.
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{const frozen=performance.now();performance.now=()=>frozen;resolve();}));
   }));
   await page.mouse.move(b.x+400,b.y+300);await page.mouse.down({button:'middle'});await page.mouse.move(b.x+440,b.y+300,{steps:2});await page.mouse.up({button:'middle'});
-  const panned=await matrix();await page.waitForTimeout(300);const settled=await matrix();
+  await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));const panned=await matrix();await page.waitForTimeout(300);const settled=await matrix();
   expect(panned.a).toBeGreaterThan(before.a);expect(panned.a).toBeLessThan(Math.exp(.2)-.001);
   expect(settled.a).toBeCloseTo(panned.a,6);expect(settled.e).toBeCloseTo(panned.e,3);expect(settled.f).toBeCloseTo(panned.f,3);
 });
