@@ -30,3 +30,9 @@ test('reports the duration of every frame',()=>{
   const frames=new FrameScheduler(()=>{},callback=>{queue.push(callback);},ms=>times.push(ms));
   frames.invalidate('chrome');queue.shift()!();expect(times).toHaveLength(1);expect(times[0]).toBeGreaterThanOrEqual(0);
 });
+test('does not report a flush that painted nothing',()=>{
+  const times:number[]=[],queue:(()=>void)[]=[];
+  const frames=new FrameScheduler(()=>{},callback=>{queue.push(callback);},ms=>times.push(ms));
+  frames.invalidate('chrome');frames.flush();expect(times).toHaveLength(1);
+  queue.shift()!();expect(times).toHaveLength(1);
+});

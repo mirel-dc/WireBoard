@@ -14,14 +14,14 @@ export class FrameScheduler {
     this.schedule();
   }
   flush():void{
-    this.flushing=true;const started=performance.now();
+    this.flushing=true;const started=performance.now();let painted=false;
     try{
       for(const layer of LAYERS){
         if(!this.layers.delete(layer))continue;
         let dirty:Dirty='all';if(layer==='scene'){dirty=this.all?'all':this.ids;this.ids=new Set();this.all=false;}
-        this.painter(layer,dirty);
+        painted=true;this.painter(layer,dirty);
       }
-    }finally{this.flushing=false;this.onFrame?.(performance.now()-started);this.schedule();}
+    }finally{this.flushing=false;if(painted)this.onFrame?.(performance.now()-started);this.schedule();}
   }
   private schedule(){if(this.scheduled||this.flushing||!this.layers.size)return;this.scheduled=true;this.requestFrame(()=>{this.scheduled=false;this.flush();});}
 }
