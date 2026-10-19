@@ -137,6 +137,19 @@ test('discarding_a_conflict_repaints_the_properties_panel',async({page})=>{
   await expect(page.locator('#operation-dialog')).toBeVisible();await page.locator('#operation-discard').click();await expect(page.locator('#operation-dialog')).not.toBeVisible();
   await expect(page.locator('#scene [data-id="1"] rect').first()).not.toHaveAttribute('fill','#ff0000');await expect(fill).not.toHaveValue('#ff0000');
 });
+test('thumbnail_rendered_during_a_pending_edit_refreshes_after_confirmation',async({page})=>{
+  const id=await setup(page);
+  await apply(page,id,1,[{op:'create',element:{kind:'frame',x:600,y:60,width:400,height:260,text:'Слайд'}},{op:'create',element:{kind:'rectangle',x:640,y:120,width:200,height:112,text:'Внутри'}}]);
+  const thumbnail=()=>page.locator('#slides img').getAttribute('src');
+  await expect(page.locator('#slides img')).toHaveAttribute('src',/^data:image\/svg/);const initial=await thumbnail();
+  let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});let first=true;
+  await page.route(`**/api/boards/${id}/apply**`,async route=>{if(first){first=false;await held;}await route.continue();});
+  await drag(page,40,0,3);await expect(page.locator('#status')).toHaveText('Сохраняем…');
+  // deselecting repaints the panels while the edit is still pending; wait out the thumbnail debounce so a render can run against the unsaved state
+  await page.keyboard.press('Escape');await page.waitForTimeout(1700);
+  release();await expect.poll(async()=>(await board(page,id)).revision).toBe(3);await expect(page.locator('#status')).toHaveText('Все изменения сохранены');
+  await expect.poll(thumbnail,{timeout:6000}).not.toBe(initial);
+});
 test('a_previous_board_thumbnail_never_lands_in_the_next_board',async({page})=>{
   const id=await setup(page);let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});let intercepted=false;
   await page.route(/\/render\?format=svg&frame=/,async route=>{if(route.request().url().includes(id)){intercepted=true;await held;}await route.continue();});

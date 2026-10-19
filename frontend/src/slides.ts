@@ -13,16 +13,17 @@ export class SlideList {
   private empty=Object.assign(document.createElement('p'),{className:'empty-slides',textContent:'Создайте первый слайд инструментом F. Он станет рамкой для вашей истории.'});
   constructor(private list:HTMLElement,private count:HTMLElement,private fit:(id:number)=>void){}
   clear():void{window.clearTimeout(this.timer);this.slides.clear();this.boardId='';this.list.replaceChildren();this.count.textContent='0';}
-  update(board:Board,selected:number[]):void{
+  // Signatures follow the confirmed board: a render only ever shows saved state, so a pending edit must not mark its thumbnail loaded.
+  update(board:Board,selected:number[],confirmed:Board=board):void{
     if(board.id!==this.boardId){this.clear();this.boardId=board.id;}
     const frames=orderedFrames(board),live=new Set(frames.map(f=>f.id));this.count.textContent=String(frames.length);
     for(const [id,slide]of this.slides)if(!live.has(id)){slide.button.remove();this.slides.delete(id);}
     let fresh=false,stale=false;
     frames.forEach((frame,index)=>{
       let slide=this.slides.get(frame.id);
-      if(!slide){const button=document.createElement('button'),image=document.createElement('img'),number=document.createElement('span'),label=document.createElement('span');image.alt='';number.className='slide-number';button.append(image,number,label);button.onclick=()=>this.fit(frame.id);slide={button,image,number,label,signature:'',loaded:''};this.slides.set(frame.id,slide);fresh=true;}
+      if(!slide){const button=document.createElement('button'),image=document.createElement('img'),number=document.createElement('span'),label=document.createElement('span');image.alt='';number.className='slide-number';button.append(image,number,label);button.onclick=()=>this.fit(frame.id);slide={button,image,number,label,signature:'',loaded:''};this.slides.set(frame.id,slide);}
       slide.button.className=`slide-row${selected.includes(frame.id)?' active':''}`;slide.number.textContent=String(index+1).padStart(2,'0');slide.label.textContent=frame.text||`Слайд ${index+1}`;
-      slide.signature=frameSignature(board,frame.id);if(slide.signature!==slide.loaded)stale=true;
+      slide.signature=confirmed.elements.some(e=>e.id===frame.id)?frameSignature(confirmed,frame.id):slide.loaded;if(slide.signature!==slide.loaded){stale=true;if(!slide.loaded)fresh=true;}
       if(this.list.children[index]!==slide.button)this.list.insertBefore(slide.button,this.list.children[index]??null);
     });
     if(frames.length)this.empty.remove();else this.list.append(this.empty);
