@@ -1,6 +1,6 @@
 use crate::{
     error::{AppError, ErrorCode},
-    history::{Actor, CommandRequest, FieldStampEntry, HistoryCommand, Source},
+    history::{Actor, CommandMeta, CommandRequest, FieldStampEntry, HistoryCommand, Source},
     model::{Board, MAX_BOARD_BYTES},
     render,
     store::{HistoryDirection, Store},
@@ -8,7 +8,10 @@ use crate::{
 use axum::{
     Json, Router,
     body::Body,
-    extract::{DefaultBodyLimit, Path, Query, Request, State, rejection::JsonRejection},
+    extract::{
+        DefaultBodyLimit, Path, Query, Request, State,
+        rejection::{JsonRejection, QueryRejection},
+    },
     http::{HeaderValue, StatusCode, header},
     middleware::{self, Next},
     response::{
@@ -144,10 +147,49 @@ fn body<T>(value: Result<Json<T>, JsonRejection>) -> Result<T, AppError> {
         }
     })
 }
-fn changed(state: &ApiState, id: &str, revision: u64, kind: &str) {
-    let _ = state
-        .events
-        .send(json!({"id":id,"revision":revision,"kind":kind}).to_string());
+fn changed(state: &ApiState, id: &str, revision: u64, kind: &str, command: Option<&CommandMeta>) {
+    let mut event = json!({"id":id,"revision":revision,"kind":kind});
+    if let Some(command) = command {
+        event["commandId"] = json!(command.id);
+        event["actorId"] = json!(command.actor.id);
+    }
+    let _ = state.events.send(event.to_string());
+}
+#[derive(Deserialize, Default)]
+struct ResponseQuery {
+    #[serde(default)]
+    state: Option<u8>,
+}
+impl ResponseQuery {
+    fn wants_state(&self) -> bool {
+        self.state == Some(1)
+    }
+}
+fn response_query(
+    query: Result<Query<ResponseQuery>, QueryRejection>,
+) -> Result<ResponseQuery, AppError> {
+    query
+        .map(|Query(query)| query)
+        .map_err(|_| AppError::validation("Некорректные параметры запроса"))
+}
+fn edit_state_value(
+    store: &Store,
+    id: &str,
+    actor: &Actor,
+    command_id: Option<&str>,
+) -> Result<serde_json::Value, AppError> {
+    let board = store.get(id)?;
+    let stamps = store
+        .stamps(id)?
+        .into_iter()
+        .map(|(key, stamp)| FieldStampEntry { key, stamp })
+        .collect::<Vec<_>>();
+    let history = store.history_summary(id, actor)?;
+    let receipt = match command_id {
+        Some(command_id) => store.receipt(id, command_id)?,
+        None => None,
+    };
+    Ok(json!({"board":board,"stamps":stamps,"history":history,"receipt":receipt}))
 }
 async fn list(State(state): State<ApiState>) -> Result<Json<serde_json::Value>, AppError> {
     Ok(Json(json!(state.store.lock().await.list()?)))
@@ -163,7 +205,7 @@ async fn create(
 ) -> Result<Json<Board>, AppError> {
     let request = body(payload)?;
     let board = state.store.lock().await.create(&request.title)?;
-    changed(&state, &board.id, board.revision, "created");
+    changed(&state, &board.id, board.revision, "created", None);
     Ok(Json(board))
 }
 async fn inspect(
@@ -176,14 +218,34 @@ pub type ApplyRequest = CommandRequest;
 async fn apply(
     State(state): State<ApiState>,
     Path(id): Path<String>,
+    query: Result<Query<ResponseQuery>, QueryRejection>,
     payload: Result<Json<ApplyRequest>, JsonRejection>,
-) -> Result<Json<Board>, AppError> {
+) -> Result<Json<serde_json::Value>, AppError> {
+    let query = response_query(query)?;
     let request = body(payload)?;
-    let outcome = state.store.lock().await.execute(&id, &request)?;
-    if outcome.committed {
-        changed(&state, &id, outcome.board.revision, "changed");
+    if query.wants_state() && request.command.is_none() {
+        return Err(AppError::validation("Для ответа state=1 нужен command"));
     }
-    Ok(Json(outcome.board))
+    let mut store = state.store.lock().await;
+    let outcome = store.execute(&id, &request)?;
+    if outcome.committed {
+        changed(
+            &state,
+            &id,
+            outcome.board.revision,
+            "changed",
+            request.command.as_ref(),
+        );
+    }
+    match request.command.as_ref().filter(|_| query.wants_state()) {
+        Some(command) => Ok(Json(edit_state_value(
+            &store,
+            &id,
+            &command.actor,
+            Some(&command.id),
+        )?)),
+        None => Ok(Json(json!(outcome.board))),
+    }
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -198,8 +260,10 @@ struct HistoryRequest {
 async fn history(
     State(state): State<ApiState>,
     Path(id): Path<String>,
+    query: Result<Query<ResponseQuery>, QueryRejection>,
     payload: Result<Json<HistoryRequest>, JsonRejection>,
-) -> Result<Json<Board>, AppError> {
+) -> Result<Json<serde_json::Value>, AppError> {
+    let query = response_query(query)?;
     let request = body(payload)?;
     let command = request.command.ok_or_else(|| {
         AppError::validation(
@@ -215,11 +279,26 @@ async fn history(
         target_command_id,
         command,
     };
-    let outcome = state.store.lock().await.execute_history(&id, &request)?;
+    let mut store = state.store.lock().await;
+    let outcome = store.execute_history(&id, &request)?;
     if outcome.committed {
-        changed(&state, &id, outcome.board.revision, "changed");
+        changed(
+            &state,
+            &id,
+            outcome.board.revision,
+            "changed",
+            Some(&request.command),
+        );
     }
-    Ok(Json(outcome.board))
+    if query.wants_state() {
+        return Ok(Json(edit_state_value(
+            &store,
+            &id,
+            &request.command.actor,
+            Some(&request.command.id),
+        )?));
+    }
+    Ok(Json(json!(outcome.board)))
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -236,26 +315,16 @@ async fn edit_state(
         return Err(AppError::validation("Некорректный участник"));
     }
     let store = state.store.lock().await;
-    let board = store.get(&id)?;
-    let stamps = store
-        .stamps(&id)?
-        .into_iter()
-        .map(|(key, stamp)| FieldStampEntry { key, stamp })
-        .collect::<Vec<_>>();
-    let history = store.history_summary(
-        &id,
-        &Actor {
-            id: query.actor_id,
-            source: Source::User,
-        },
-    )?;
-    let receipt = match query.command_id {
-        Some(command_id) => store.receipt(&id, &command_id)?,
-        None => None,
+    let actor = Actor {
+        id: query.actor_id,
+        source: Source::User,
     };
-    Ok(Json(
-        json!({"board":board,"stamps":stamps,"history":history,"receipt":receipt}),
-    ))
+    Ok(Json(edit_state_value(
+        &store,
+        &id,
+        &actor,
+        query.command_id.as_deref(),
+    )?))
 }
 async fn command_receipt(
     State(state): State<ApiState>,
@@ -281,7 +350,7 @@ async fn delete(
     Query(query): Query<RevisionQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     state.store.lock().await.delete(&id, query.revision)?;
-    changed(&state, &id, query.revision + 1, "deleted");
+    changed(&state, &id, query.revision + 1, "deleted", None);
     Ok(Json(json!({"deleted":id})))
 }
 async fn import(
@@ -292,7 +361,7 @@ async fn import(
     let bytes =
         serde_json::to_vec(&value).map_err(|_| AppError::validation("Некорректный JSON"))?;
     let board = state.store.lock().await.import(Board::from_json(&bytes)?)?;
-    changed(&state, &board.id, board.revision, "created");
+    changed(&state, &board.id, board.revision, "created", None);
     Ok(Json(board))
 }
 #[derive(Deserialize)]

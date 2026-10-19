@@ -301,3 +301,127 @@ async fn agent_metadata_cannot_claim_user_review() {
     assert_eq!(r.status(), 403);
     task.abort();
 }
+async fn post_json(url: &str, path: &str, body: &impl serde::Serialize) -> reqwest::Response {
+    client()
+        .post(format!("{url}{path}"))
+        .bearer_auth("secret")
+        .json(body)
+        .send()
+        .await
+        .unwrap()
+}
+#[tokio::test]
+async fn apply_with_state_returns_edit_state() {
+    let (_d, url, _, b, task) = server().await;
+    let req = common::request(1, ops(json!([{"op":"move","ids":[1],"dx":20,"dy":0}])));
+    let r = post_json(&url, &format!("/api/boards/{}/apply?state=1", b.id), &req).await;
+    assert_eq!(r.status(), 200);
+    let state: Value = r.json().await.unwrap();
+    let id = req.command.as_ref().unwrap().id.clone();
+    assert_eq!(state["board"]["revision"], 2);
+    assert_eq!(state["board"]["elements"][0]["x"], 20.0);
+    assert_eq!(state["receipt"]["id"], id);
+    assert_eq!(state["receipt"]["committedRevision"], 2);
+    assert_eq!(state["history"]["undo"]["commandId"], id);
+    assert!(state["stamps"].is_array());
+    task.abort();
+}
+#[tokio::test]
+async fn history_with_state_returns_edit_state() {
+    let (_d, url, _, b, task) = server().await;
+    let req = common::request(1, ops(json!([{"op":"move","ids":[1],"dx":20,"dy":0}])));
+    assert_eq!(
+        post_json(&url, &format!("/api/boards/{}/apply", b.id), &req)
+            .await
+            .status(),
+        200
+    );
+    let undo = wireboard::history::HistoryCommand {
+        revision: 2,
+        direction: wireboard::store::HistoryDirection::Undo,
+        target_command_id: req.command.as_ref().unwrap().id.clone(),
+        command: common::meta(),
+    };
+    let r = post_json(
+        &url,
+        &format!("/api/boards/{}/history?state=1", b.id),
+        &undo,
+    )
+    .await;
+    assert_eq!(r.status(), 200);
+    let state: Value = r.json().await.unwrap();
+    assert_eq!(state["board"]["revision"], 3);
+    assert_eq!(state["board"]["elements"][0]["x"], 0.0);
+    assert_eq!(state["receipt"]["id"], undo.command.id);
+    assert_eq!(
+        state["history"]["redo"]["commandId"],
+        req.command.as_ref().unwrap().id
+    );
+    task.abort();
+}
+#[tokio::test]
+async fn state_response_requires_command_and_valid_query() {
+    let (_d, url, _, b, task) = server().await;
+    let legacy = CommandRequest {
+        revision: 1,
+        operations: ops(json!([{"op":"move","ids":[1],"dx":20,"dy":0}])),
+        command: None,
+        guards: None,
+    };
+    let r = post_json(
+        &url,
+        &format!("/api/boards/{}/apply?state=1", b.id),
+        &legacy,
+    )
+    .await;
+    assert_eq!(r.status(), 400);
+    let r = post_json(
+        &url,
+        &format!("/api/boards/{}/apply?state=yes", b.id),
+        &legacy,
+    )
+    .await;
+    assert_eq!(r.status(), 400);
+    let board: Value = client()
+        .get(format!("{url}/api/boards/{}", b.id))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(board["revision"], 1);
+    task.abort();
+}
+#[tokio::test]
+async fn changed_event_names_the_command() {
+    let (_d, url, state, b, task) = server().await;
+    let mut events = state.events.subscribe();
+    let req = common::request(1, ops(json!([{"op":"move","ids":[1],"dx":20,"dy":0}])));
+    assert_eq!(
+        post_json(&url, &format!("/api/boards/{}/apply", b.id), &req)
+            .await
+            .status(),
+        200
+    );
+    let event: Value = serde_json::from_str(&events.try_recv().unwrap()).unwrap();
+    assert_eq!(event["commandId"], req.command.as_ref().unwrap().id);
+    assert_eq!(event["actorId"], "test-user");
+    let legacy = CommandRequest {
+        revision: 2,
+        operations: ops(json!([{"op":"move","ids":[1],"dx":5,"dy":0}])),
+        command: None,
+        guards: None,
+    };
+    assert_eq!(
+        post_json(&url, &format!("/api/boards/{}/apply", b.id), &legacy)
+            .await
+            .status(),
+        200
+    );
+    let event: Value = serde_json::from_str(&events.try_recv().unwrap()).unwrap();
+    assert!(event.get("commandId").is_none());
+    assert!(event.get("actorId").is_none());
+    task.abort();
+}
