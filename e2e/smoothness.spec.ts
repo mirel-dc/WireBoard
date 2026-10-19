@@ -88,3 +88,14 @@ test('own_drag_sends_exactly_one_request',async({page})=>{
   await page.waitForTimeout(1200);
   expect(calls).toEqual([`POST /api/boards/${id}/apply?state=1`]);
 });
+test('sidebar_refreshes_after_a_reload_event_that_follows_a_missed_change',async({page})=>{
+  await page.addInitScript(()=>{const w=window as unknown as {sources:EventSource[];dropBoard:boolean};w.sources=[];w.dropBoard=false;const add=EventSource.prototype.addEventListener;
+    EventSource.prototype.addEventListener=function(this:EventSource,type:string,listener:EventListenerOrEventListenerObject,options?:boolean|AddEventListenerOptions){if(!w.sources.includes(this))w.sources.push(this);
+      const wrapped=type==='board'?((event:Event)=>{if(!w.dropBoard)(listener as EventListener)(event);}) as EventListener:listener;add.call(this,type,wrapped,options);} as typeof add;});
+  await setup(page);await page.waitForTimeout(1200);
+  const title=`Missed ${Date.now()}`;await page.evaluate(()=>{(window as unknown as {dropBoard:boolean}).dropBoard=true;});
+  const created=await page.request.post('/api/boards',{headers:{Origin:'http://127.0.0.1:19843'},data:{title}});expect(created.ok()).toBeTruthy();
+  await page.waitForTimeout(1500);await expect(page.locator('#boards')).not.toContainText(title);
+  await page.evaluate(()=>{const w=window as unknown as {sources:EventSource[];dropBoard:boolean};w.dropBoard=false;for(const source of w.sources)source.dispatchEvent(new MessageEvent('reload',{data:'{}'}));});
+  await expect(page.locator('#boards')).toContainText(title);
+});

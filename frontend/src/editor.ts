@@ -127,7 +127,7 @@ export class Editor {
   private event(event: BoardEvent | null) {
     // Our own command already returned its state; only the library counters may need a refresh.
     if(event?.kind==='changed'&&event.id===this.board?.id&&event.actorId===this.actor.id&&this.queue?.isOwn(event.commandId)){const listed=this.boards.find(board=>board.id===event.id);if(!listed||listed.title!==this.board.title||listed.elementCount!==this.board.elements.length)this.scheduleBoards();return;}
-    if (event?.kind === 'created' || event?.kind === 'deleted' || event?.kind === 'changed') this.scheduleBoards();
+    if (!event || event.kind === 'created' || event.kind === 'deleted' || event.kind === 'changed') this.scheduleBoards();
     if (event?.kind === 'deleted' && event.id === this.board?.id) { if (this.draft) { this.status('Доска удалена · черновик остаётся доступен', true); return; } this.empty();this.boardAddress(null);this.status('Доска удалена · выберите другую доску'); return; }
     if (!event || event.id === this.board?.id && event.revision > this.board.revision) { this.queued = true; if (!this.interaction.active) void this.refresh(); }
   }
