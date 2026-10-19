@@ -11,7 +11,7 @@ export interface BoardSummary { id: string; title: string; slug: string; revisio
 export type Patch = Partial<Pick<Element, 'text' | 'title' | 'fontWeight' | 'fill' | 'stroke' | 'fontSize' | 'x' | 'y' | 'width' | 'height' | 'from' | 'to' | 'fromPort' | 'toPort' | 'parentFrameId'>>;
 export type CommentOperation = { op: 'comment_create'; anchor: Anchor; author: Author; text: string } | { op: 'comment_reply'; threadId: number; author: Author; text: string; submitForReview: boolean } | { op: 'comment_status'; threadId: number; author: 'user'; status: 'open' | 'resolved' } | { op: 'comment_reanchor'; threadId: number; author: 'user'; anchor: Anchor };
 export type Operation = { op: 'create'; element: Partial<Element> & { kind: Kind } } | { op: 'update'; id: number; patch: Patch } | { op: 'move'; ids: number[]; dx: number; dy: number } | { op: 'resize'; id: number; width: number; height: number } | { op: 'delete'; ids: number[] } | { op: 'duplicate'; ids: number[]; dx: number; dy: number } | { op: 'rename'; title: string } | CommentOperation;
-export interface BoardEvent { id: string; revision: number; kind: 'created' | 'changed' | 'deleted' }
+export interface BoardEvent { id: string; revision: number; kind: 'created' | 'changed' | 'deleted'; commandId?: string; actorId?: string }
 export type Source = 'user'|'codex'|'claude'|'legacy';
 export interface Actor {id:string;source:Source}
 export interface CommandMeta {id:string;actor:Actor;label:string}

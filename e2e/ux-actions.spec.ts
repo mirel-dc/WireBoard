@@ -38,7 +38,7 @@ test('clipboard nested frame copies only internal links with atomic Undo/Redo',a
 
 test('clipboard two pastes before ACK allocate distinct IDs and repeated offset',async({page})=>{
   const id=await setup(page);await selectCard(page);const data=await copy(page);let calls=0;
-  await page.route(`**/api/boards/${id}/apply`,async route=>{calls++;const response=await route.fetch();if(calls===1)await new Promise(r=>setTimeout(r,800));await route.fulfill({response});});
+  await page.route(`**/api/boards/${id}/apply**`,async route=>{calls++;const response=await route.fetch();if(calls===1)await new Promise(r=>setTimeout(r,800));await route.fulfill({response});});
   await paste(page,data);await paste(page,data);await expect.poll(async()=>(await board(page,id)).elements.length).toBe(3);
   const b=await board(page,id);expect(b.elements.map((e:any)=>[e.id,e.x,e.y])).toEqual([[1,100,100],[2,124,124],[3,148,148]]);
   await page.keyboard.press('Control+z');await expect.poll(async()=>(await board(page,id)).elements.length).toBe(2);
@@ -59,14 +59,14 @@ test('clipboard malformed typed payload does not fall through to plain text',asy
 
 test('clipboard late acknowledgement keeps a newer selection',async({page})=>{
   const id=await setup(page);await selectCard(page);const data=await copy(page);let release!:()=>void;const gate=new Promise<void>(r=>release=r);
-  await page.route(`**/api/boards/${id}/apply`,async route=>{const response=await route.fetch();await gate;await route.fulfill({response});});
+  await page.route(`**/api/boards/${id}/apply**`,async route=>{const response=await route.fetch();await gate;await route.fulfill({response});});
   await paste(page,data);await expect.poll(async()=>(await board(page,id)).elements.length).toBe(2);await selectCard(page,1);release();
   await expect(page.locator('#status')).toContainText('сохранены');await page.keyboard.press('Delete');await expect.poll(async()=>(await board(page,id)).elements.map((e:any)=>e.id)).toEqual([2]);
 });
 
 test('clipboard frame target geometry change conflicts instead of inserting with stale membership',async({page})=>{
   const id=await setup(page);await linkedFrame(page,id);const data=await copy(page);let release!:()=>void;const gate=new Promise<void>(r=>release=r);let sent=false;
-  await page.route(`**/api/boards/${id}/apply`,async route=>{if(!sent){sent=true;await gate;}await route.continue();});
+  await page.route(`**/api/boards/${id}/apply**`,async route=>{if(!sent){sent=true;await gate;}await route.continue();});
   await paste(page,data);await expect.poll(()=>sent).toBe(true);
   const state=await board(page,id);
   const remote=await page.request.post(`/api/boards/${id}/apply`,{headers:{Origin:'http://127.0.0.1:19843'},data:{revision:state.revision,operations:[{op:'move',ids:[2],dx:500,dy:0}]}});expect(remote.ok()).toBeTruthy();release();
@@ -99,14 +99,14 @@ test('clipboard cycles dangling links and oversized clusters reject before writi
 
 test('clipboard lost response retries the receipt without a second insertion',async({page})=>{
   const id=await setup(page);await selectCard(page);const data=await copy(page);let first=true;
-  await page.route(`**/api/boards/${id}/apply`,async route=>{if(first){first=false;await route.fetch();await route.abort('failed');}else await route.continue();});
+  await page.route(`**/api/boards/${id}/apply**`,async route=>{if(first){first=false;await route.fetch();await route.abort('failed');}else await route.continue();});
   await paste(page,data);await expect(page.locator('#operation-dialog')).toBeVisible();await page.locator('#operation-retry').click();await expect(page.locator('#operation-dialog')).not.toBeVisible();
   expect((await board(page,id)).elements).toHaveLength(2);expect((await board(page,id)).revision).toBe(2);await page.keyboard.press('Control+z');await expect.poll(async()=>(await board(page,id)).elements.length).toBe(1);
 });
 
 test('clipboard two frame pastes before ACK keep frame allocation guards coherent',async({page})=>{
   const id=await setup(page);await linkedFrame(page,id);const data=await copy(page);let first=true;
-  await page.route(`**/api/boards/${id}/apply`,async route=>{const response=await route.fetch();if(first){first=false;await new Promise(r=>setTimeout(r,800));}await route.fulfill({response});});
+  await page.route(`**/api/boards/${id}/apply**`,async route=>{const response=await route.fetch();if(first){first=false;await new Promise(r=>setTimeout(r,800));}await route.fulfill({response});});
   await paste(page,data);await paste(page,data);await expect.poll(async()=>(await board(page,id)).elements.length).toBe(17);expect((await board(page,id)).elements.filter((e:any)=>e.id>=8).map((e:any)=>e.id)).toEqual([8,9,10,11,12,13,14,15,16,17]);
 });
 
@@ -181,7 +181,7 @@ test('creation click defaults and cancellation do not leave phantom objects',asy
 });
 
 test('creation two drags before acknowledgement retain distinct IDs',async({page})=>{
-  const id=await setup(page);let calls=0;await page.route(`**/api/boards/${id}/apply`,async route=>{calls++;const response=await route.fetch();if(calls===1)await new Promise(r=>setTimeout(r,900));await route.fulfill({response});});
+  const id=await setup(page);let calls=0;await page.route(`**/api/boards/${id}/apply**`,async route=>{calls++;const response=await route.fetch();if(calls===1)await new Promise(r=>setTimeout(r,900));await route.fulfill({response});});
   await draw(page,'rectangle',{x:400,y:230},{x:460,y:280});await draw(page,'text',{x:500,y:300},{x:570,y:380});
   await expect.poll(async()=>(await board(page,id)).elements.length).toBe(3);expect((await board(page,id)).elements.map((e:any)=>e.id)).toEqual([1,2,3]);
   expect((await board(page,id)).elements[2]).toMatchObject({kind:'text',width:70,height:80});

@@ -65,7 +65,7 @@ export class Editor {
     window.clearTimeout(this.saveTimer);this.saveView();
     if (!this.canNavigate()) { this.boardAddress(this.board?.id??null); return; }
     const generation = ++this.loading; this.opening=true; this.comments.cancelAnchor();this.interaction.setTool('select'); this.status('Открываем доску…');
-    try { if(!this.boards.some(board=>board.id===id))await this.reloadBoards();const state = await api.editState(id,this.actor.id);const board=state.board; if (generation !== this.loading) return; const saved = this.savedView(id); this.board = board; this.view.selected = saved?.selected ?? []; this.view.setBoard(board);this.queue=new CommandQueue(this.actor,state,api,()=>this.syncQueue());this.syncQueue(); if (saved) { this.view.camera = saved.camera; this.view.updateCamera(); } else this.view.fit(); if(innerWidth<900)document.querySelector('.workspace')!.classList.add('sidebar-hidden'); this.boardAddress(id,push);this.panels(); this.saveView(); await this.reloadBoards();document.title=`${board.title} — Wireboard`; this.status('Все изменения сохранены'); } catch (error) { this.boardAddress(this.board?.id??null);this.report(error); } finally {this.opening=false;if(this.queued)await this.refresh();}
+    try { if(!this.boards.some(board=>board.id===id))await this.reloadBoards();const state = await api.editState(id,this.actor.id);const board=state.board; if (generation !== this.loading) return; const saved = this.savedView(id); this.board = board; this.view.selected = saved?.selected ?? []; this.view.setBoard(board);this.queue=new CommandQueue(this.actor,state,{apply:api.applyState,history:api.historyState,editState:api.editState},()=>this.syncQueue());this.syncQueue(); if (saved) { this.view.camera = saved.camera; this.view.updateCamera(); } else this.view.fit(); if(innerWidth<900)document.querySelector('.workspace')!.classList.add('sidebar-hidden'); this.boardAddress(id,push);this.panels(); this.saveView(); await this.reloadBoards();document.title=`${board.title} — Wireboard`; this.status('Все изменения сохранены'); } catch (error) { this.boardAddress(this.board?.id??null);this.report(error); } finally {this.opening=false;if(this.queued)await this.refresh();}
   }
   private panels(force = false) { if (!this.board) return; el('board-title').textContent = this.board.title; showSlides(this.board, this.view.selected, id => { this.select([id]); this.view.fit(id); }); const base=this.queue?.projectedState();showProperties(this.board, this.view.selected, (ops, revision) => this.apply(ops, revision, base), id => this.editText(id), force,()=>{const focused=this.queue!.projectedState();return(ops,revision)=>this.apply(ops,revision,focused);}); this.context(); this.comments.update(); }
   select(ids: number[]) { this.interaction.finishNudge();this.selectionEpoch++;this.view.setSelection(ids); this.panels(); this.scheduleSaveView(); }
@@ -122,8 +122,12 @@ export class Editor {
       if(this.queueError!==queue.error){this.queueError=queue.error;if(queue.error)this.report(queue.error);if(!this.comments.isSending&&(!this.draft||uncertain))el<HTMLDialogElement>('operation-dialog').showModal();}
     }else{this.queueError=null;const dialog=el<HTMLDialogElement>('operation-dialog');if(dialog.open)dialog.close();this.status(queue.hasPending?'Сохраняем…':'Все изменения сохранены');}
   }
+  private boardsTimer=0;
+  private scheduleBoards(){window.clearTimeout(this.boardsTimer);this.boardsTimer=window.setTimeout(()=>{void this.reloadBoards().catch(error=>this.report(error));},1000);}
   private event(event: BoardEvent | null) {
-    if (event?.kind === 'created' || event?.kind === 'deleted' || event?.kind === 'changed') void this.reloadBoards().catch(error => this.report(error));
+    // Our own command already returned its state; only the library counters may need a refresh.
+    if(event?.kind==='changed'&&event.id===this.board?.id&&event.actorId===this.actor.id&&this.queue?.isOwn(event.commandId)){const listed=this.boards.find(board=>board.id===event.id);if(!listed||listed.title!==this.board.title||listed.elementCount!==this.board.elements.length)this.scheduleBoards();return;}
+    if (event?.kind === 'created' || event?.kind === 'deleted' || event?.kind === 'changed') this.scheduleBoards();
     if (event?.kind === 'deleted' && event.id === this.board?.id) { if (this.draft) { this.status('Доска удалена · черновик остаётся доступен', true); return; } this.empty();this.boardAddress(null);this.status('Доска удалена · выберите другую доску'); return; }
     if (!event || event.id === this.board?.id && event.revision > this.board.revision) { this.queued = true; if (!this.interaction.active) void this.refresh(); }
   }
@@ -139,7 +143,6 @@ export class Editor {
       if(state.board.revision<(this.queue?.confirmed.board.revision??0)){this.queued=true;return;}
       this.view.setBoard(state.board);this.queue?.accept(state);
       if(this.draft){this.status('Доска изменилась · ваш черновик сохранён');el('draft-message').textContent='Другой клиент изменил доску. Ваш текст остался в черновике.';}
-      await this.reloadBoards();
     }catch(error){this.report(error);}finally{this.refreshing=false;if(this.queued&&!this.interaction.active&&!this.opening)window.setTimeout(()=>{void this.refresh();},25);}
   }
   private editText(id: number) { if (!this.board || !this.queue || this.opening) return; if(this.draft){if(this.draft.id!==id)this.report(new Error('Сначала сохраните или отмените текущий текст.'));el<HTMLTextAreaElement>('text-draft').focus();return;} const e = this.board.elements.find(e => e.id === id); if (!e) return; this.draft = { id, revision: this.board.revision, board: this.board.id,base:this.queue.projectedState() }; el<HTMLTextAreaElement>('text-draft').value = e.text; el('draft-message').textContent = ''; el('draft-retry').hidden = true; el('draft-save').hidden = false; this.textEditor.show(e,this.view); }

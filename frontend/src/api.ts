@@ -14,28 +14,14 @@ async function request<T>(path: string, method = 'GET', body?: unknown): Promise
 export const api = {
   metrics:()=>request<FontMetrics>('/api/layout-metrics'),
   library:()=>request<{path:string;boardCount:number}>('/api/library'),
-  snapshot: async (id: string): Promise<{ board: Board; svg: string }> => {
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const board = await request<Board>(`/api/boards/${id}`);
-      const render = await response(`/api/boards/${id}/render?format=svg`);
-      const svg = await render.text();
-      if (Number(render.headers.get('x-board-revision')) === board.revision) return { board, svg };
-    }
-    throw new ApiError('conflict', 'Доска быстро меняется. Повторите открытие.');
-  },
   list: () => request<BoardSummary[]>('/api/boards'),
   create: (title: string) => request<Board>('/api/boards', 'POST', { title }),
   getBoard: (id: string) => request<Board>(`/api/boards/${id}`),
   apply: (id: string, command:CommandRequest|number, operations?:Operation[]) => request<Board>(`/api/boards/${id}/apply`, 'POST', typeof command==='number'?{revision:command,operations}:command),
   history: (id: string, command:HistoryCommand|number, direction?:'undo'|'redo') => request<Board>(`/api/boards/${id}/history`, 'POST', typeof command==='number'?{revision:command,direction}:command),
+  applyState: (id:string,command:CommandRequest)=>request<EditState>(`/api/boards/${id}/apply?state=1`,'POST',command),
+  historyState: (id:string,command:HistoryCommand)=>request<EditState>(`/api/boards/${id}/history?state=1`,'POST',command),
   editState: (id:string,actorId:string,commandId?:string)=>request<EditState>(`/api/boards/${id}/edit-state?actorId=${encodeURIComponent(actorId)}${commandId?`&commandId=${encodeURIComponent(commandId)}`:''}`),
-  editSnapshot: async(id:string,actorId:string,commandId?:string):Promise<{state:EditState;svg:string}>=>{
-    for(let attempt=0;attempt<4;attempt++) {
-      const state=await api.editState(id,actorId,commandId);const render=await response(`/api/boards/${id}/render?format=svg`);const svg=await render.text();
-      if(Number(render.headers.get('x-board-revision'))===state.board.revision)return {state,svg};
-    }
-    throw new ApiError('conflict','Доска быстро меняется. Повторите открытие.');
-  },
   receipt: (id:string,commandId:string)=>request<CommandReceipt>(`/api/boards/${id}/commands/${encodeURIComponent(commandId)}`),
   delete: (id: string, revision: number) => request(`/api/boards/${id}?revision=${revision}`, 'DELETE'),
   import: (board: unknown) => request<Board>('/api/import', 'POST', board),

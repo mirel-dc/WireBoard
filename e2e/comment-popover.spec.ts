@@ -29,7 +29,7 @@ test('sending closes the popup only after acknowledgement for new comments and r
   let release!: () => void;
   let entered = false;
   const wait = new Promise<void>(resolve => { release = resolve; });
-  await page.route(`**/api/boards/${id}/apply`, async route => {
+  await page.route(`**/api/boards/${id}/apply**`, async route => {
     entered = true; await wait; await route.continue();
   }, { times: 1 });
   await page.getByRole('button', { name: 'Отправить комментарий', exact: true }).click();
@@ -64,7 +64,7 @@ test('a delayed send keeps a different discussion open', async ({ page }) => {
   let release!: () => void;
   let entered = false;
   const wait = new Promise<void>(resolve => { release = resolve; });
-  await page.route(`**/api/boards/${id}/apply`, async route => {
+  await page.route(`**/api/boards/${id}/apply**`, async route => {
     entered = true; await wait; await route.continue();
   }, { times: 1 });
   await page.keyboard.press('Control+Enter');
@@ -88,7 +88,7 @@ test('retry preserves edited text when the previous message was already saved', 
   await page.locator('[data-tool="comment"]').click();
   await page.locator('#canvas').click({ position: { x: 260, y: 220 } });
   await page.keyboard.type('Сохранённое сообщение');
-  await page.route(`**/api/boards/${id}/apply`, async route => { await route.fetch(); await route.abort('failed'); }, { times: 1 });
+  await page.route(`**/api/boards/${id}/apply**`, async route => { await route.fetch(); await route.abort('failed'); }, { times: 1 });
   await page.keyboard.press('Control+Enter');
   await expect(page.getByRole('button', { name: 'Повторить комментарий', exact: true })).toBeVisible();
   await expect(page.locator('#comments')).toBeVisible();

@@ -2,7 +2,7 @@ import {ApiError} from './api';
 import {members} from './canvas';
 import type {Actor,Board,CommandMeta,CommandRequest,EditState,Element,EntityKey,FieldGuard,FieldKey,HistoryCommand,HistorySummary,Operation,OptionalValue} from './types';
 export interface EditIntent {label:string;operations:Operation[];guards:FieldGuard[]}
-interface Adapter {apply(id:string,request:CommandRequest):Promise<Board>;history(id:string,request:HistoryCommand):Promise<Board>;editState(id:string,actorId:string,commandId?:string):Promise<EditState>}
+interface Adapter {apply(id:string,request:CommandRequest):Promise<EditState>;history(id:string,request:HistoryCommand):Promise<EditState>;editState(id:string,actorId:string,commandId?:string):Promise<EditState>}
 interface Change {key:FieldKey;before:OptionalValue;after:OptionalValue;beforeStamp:string;afterStamp:string}
 interface Cached {changes:Change[];previous:HistorySummary;label:string}
 interface Pending {
@@ -110,11 +110,12 @@ function applyChanges(state:EditState,entry:Cached,direction:'undo'|'redo') {
   }
 }
 export class CommandQueue {
-  private pending:Pending[]=[];private cache=new Map<string,Cached>();private running=false;
+  private pending:Pending[]=[];private cache=new Map<string,Cached>();private running=false;private recent:string[]=[];
   mode:'idle'|'saving'|'uncertain'|'conflict'='idle';error:unknown=null;private remote=false;
   constructor(public actor:Actor,public confirmed:EditState,private adapter:Adapter,private onChange:()=>void){}
   get hasPending(){return this.pending.length>0;}
   get inFlightId(){return this.pending[0]?.meta.id;}
+  isOwn(commandId?:string):boolean{return !!commandId&&(commandId===this.inFlightId||this.recent.includes(commandId));}
   projectedState():EditState {
     const state=structuredClone(this.confirmed);if(this.remote)return state;
     for(const p of this.pending) {
@@ -166,7 +167,7 @@ export class CommandQueue {
     this.mode='idle';this.error=null;this.remote=false;this.onChange();void this.pump();
   }
   private finish(p:Pending,state:EditState) {
-    if(this.pending[0]!==p)return;this.accept(state);this.pending.shift();this.mode='idle';this.error=null;this.remote=false;p.confirmed?.(p.meta.id);p.resolve(state.board);this.onChange();void this.pump();
+    if(this.pending[0]!==p)return;this.recent.push(p.meta.id);if(this.recent.length>32)this.recent.shift();this.accept(state);this.pending.shift();this.mode='idle';this.error=null;this.remote=false;p.confirmed?.(p.meta.id);p.resolve(state.board);this.onChange();void this.pump();
   }
   private async pump():Promise<void> {
     if(this.running||this.mode==='uncertain'||this.mode==='conflict'||!this.pending.length)return;
@@ -179,8 +180,7 @@ export class CommandQueue {
     }
     this.running=true;this.mode='saving';this.error=null;this.onChange();
     try {
-      if(p.kind==='edit')await this.adapter.apply(id,p.request as CommandRequest);else await this.adapter.history(id,p.request as HistoryCommand);
-      const state=await this.adapter.editState(id,this.actor.id,p.meta.id);this.running=false;this.finish(p,state);
+      const state=p.kind==='edit'?await this.adapter.apply(id,p.request as CommandRequest):await this.adapter.history(id,p.request as HistoryCommand);this.running=false;this.finish(p,state);
     } catch(error) {
       this.running=false;this.error=error;this.mode=error instanceof ApiError&&!['connection','persistence','request'].includes(error.code)?'conflict':'uncertain';p.reject(error);this.onChange();
     }

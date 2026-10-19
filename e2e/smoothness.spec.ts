@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test';
-import {setup,board,apply,box} from './ux-helpers';
+import {setup,board,apply,box,drag} from './ux-helpers';
 test('editor_paints_the_scene_without_server_svg',async({page})=>{
   const renders:string[]=[];page.on('request',r=>{if(r.url().includes('/render?format=svg')&&!r.url().includes('frame='))renders.push(r.url());});
   const id=await setup(page);
@@ -79,4 +79,12 @@ test('closing_a_thread_returns_focus_to_its_displaced_pin',async({page})=>{
   await expect(page.locator('.pin-leader[data-thread="1"]')).toHaveCount(1);
   await page.locator('#comments-close').click();
   await expect(page.locator('.comment-pin[data-thread="1"]')).toBeFocused();
+});
+
+test('own_drag_sends_exactly_one_request',async({page})=>{
+  const id=await setup(page);await page.waitForTimeout(1200);const calls:string[]=[];
+  page.on('request',r=>{const url=new URL(r.url());if(url.pathname.startsWith('/api/'))calls.push(`${r.method()} ${url.pathname}${url.search}`);});
+  await drag(page,40,0);await expect.poll(async()=>(await board(page,id)).revision).toBe(2);await expect(page.locator('#status')).toHaveText('Все изменения сохранены');
+  await page.waitForTimeout(1200);
+  expect(calls).toEqual([`POST /api/boards/${id}/apply?state=1`]);
 });
