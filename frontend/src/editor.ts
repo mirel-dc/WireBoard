@@ -195,7 +195,7 @@ export class Editor {
   }
   private openText(e:BoardElement,draft:TextDraft,selectAll=false) {
     this.view.setEditing(e.id);this.textEditor.show(e,draft,selectAll);this.positionText();
-    // Text scaled below half size is unreadable; zoom around the block so it stays under the cursor.
+    // Text scaled below half size is unreadable; zoom around the block's centre.
     const zoom=this.view.camera.zoom,box=this.view.textBox(e.id);
     if(zoom<MIN_EDIT_ZOOM&&box){const rect=this.view.svg.getBoundingClientRect();this.view.animateZoom(MIN_EDIT_ZOOM/zoom,rect.x+this.view.camera.x+(box.x+box.width/2)*zoom,rect.y+this.view.camera.y+(box.y+box.height/2)*zoom);}
   }

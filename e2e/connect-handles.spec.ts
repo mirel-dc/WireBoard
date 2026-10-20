@@ -100,9 +100,9 @@ test('escape_cancels_a_drag_without_a_command',async({page})=>{
 });
 test('dragging_from_a_plus_works_like_a_dot',async({page})=>{
   const id=await setup(page);await hoverCard(page);const plus=await bounding(page.locator('[data-add="1"][data-side="bottom"]'));
-  await page.mouse.move(plus.x+plus.width/2,plus.y+plus.height/2);await page.mouse.down();const p=await screen(page,210,600);await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
+  await page.mouse.move(plus.x+plus.width/2,plus.y+plus.height/2);await page.mouse.down();const p=await screen(page,210,520);await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
   await expect(page.locator('#text-editor')).toBeVisible();await page.keyboard.press('Escape');await expect.poll(async()=>(await board(page,id)).elements.length).toBe(3);
-  const [,block,link]=(await board(page,id)).elements;expect([block.x,block.y]).toEqual([100,600]);expect([link.fromPort,link.toPort]).toEqual(['bottom','top']);
+  const [,block,link]=(await board(page,id)).elements;expect([block.x,block.y]).toEqual([100,520]);expect([link.fromPort,link.toPort]).toEqual(['bottom','top']);
 });
 test('wheel_during_a_drag_pans_and_the_preview_follows',async({page})=>{
   await setup(page);const d=await grabDot(page);await page.mouse.move(d.x+150,d.y,{steps:6});const before=await bounding(page.locator('[data-wire-preview]'));
@@ -111,6 +111,12 @@ test('wheel_during_a_drag_pans_and_the_preview_follows',async({page})=>{
 });
 test('plus_on_an_empty_text_block_then_escape_leaves_no_connector',async({page})=>{
   const id=await setup(page);await apply(page,id,1,[{op:'create',element:{kind:'text',x:100,y:400,width:320,height:100,text:'T'}}]);await expect(page.locator('#scene [data-id="2"]')).toBeVisible();
-  await clickPlus(page,'right',2);await expect(page.locator('#text-editor')).toBeVisible();await page.keyboard.press('Escape');
+  await clickPlus(page,'right',2);await expect(page.locator('#text-editor')).toBeVisible();
+  await expect.poll(async()=>(await board(page,id)).elements.length).toBe(4);await page.keyboard.press('Escape');
   await expect.poll(async()=>{const els=(await board(page,id)).elements;return[els.some((e:{kind:string})=>e.kind==='connector'),els.some((e:{id:number;kind:string})=>e.id===2&&e.kind==='text'),els.length];}).toEqual([false,true,2]);
+});
+test('window_blur_during_a_drag_creates_nothing',async({page})=>{
+  const id=await setup(page);const d=await grabDot(page);await page.mouse.move(d.x+120,d.y,{steps:6});await expect(page.locator('[data-wire-preview]')).toBeVisible();
+  await page.evaluate(()=>window.dispatchEvent(new Event('blur')));await expect(page.locator('[data-wire-preview]')).toBeHidden();
+  await page.mouse.up();await page.waitForTimeout(200);expect((await board(page,id)).revision).toBe(1);
 });
