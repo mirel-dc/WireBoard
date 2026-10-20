@@ -69,7 +69,8 @@ export class Interaction {
     const points=connectorPreviewPoints(board,link,'to',g.point,g.target),target=g.target?board.elements.find(e=>e.id===g.target!.id):undefined;
     this.view.previewWire(points,target&&points.length?{element:this.view.project(target),port:points.at(-1)!}:null);
   }
-  setTool(tool:Tool){if(this.gesture?.type==='connector-end')this.cancel();this.tool=tool;this.connectorFrom=null;this.view.svg.dataset.tool=tool;this.callbacks.tool(tool);}
+  // Handles show only under the select tool, so a tool change repaints the overlay.
+  setTool(tool:Tool){if(this.gesture?.type==='connector-end')this.cancel();this.tool=tool;this.connectorFrom=null;this.view.svg.dataset.tool=tool;this.view.frames.invalidate('overlay');this.callbacks.tool(tool);}
   private hover(event:PointerEvent){
     if(this.tool!=='select'||this.space){this.view.setHover(null);return;}
     const target=this.view.elementAt(event.target);if(target&&target.kind!=='connector'&&target.kind!=='frame'){this.view.setHover(target.id);return;}

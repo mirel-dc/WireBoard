@@ -62,9 +62,9 @@ export class CanvasView {
   setSelection(ids: number[]) { this.selected = ids.filter(id => this.board?.elements.some(e => e.id === id)); this.frames.invalidate('overlay'); }
   setHover(id:number|null){if(this.hover===id)return;this.hover=id;this.frames.invalidate('overlay');}
   hovered():Element|null{const e=this.hover===null?null:this.board?.elements.find(e=>e.id===this.hover);return e?this.project(e):null;}
-  // The hovered block wins over a single selected one; any gesture, preview or open text editor hides the handles.
+  // The hovered block wins over a single selected one; any gesture, preview, open text editor or tool other than select hides the handles.
   private connectSource():Element|null{
-    const board=this.board;if(!board||this.editing!==null||this.selected.length>1||this.preview||this.resizePreview||this.marqueeBounds||this.creation||this.connectorPreview||this.wire)return null;
+    const board=this.board,tool=this.svg.dataset.tool;if(!board||tool&&tool!=='select'||this.editing!==null||this.selected.length>1||this.preview||this.resizePreview||this.marqueeBounds||this.creation||this.connectorPreview||this.wire)return null;
     const usable=(e:Element|undefined)=>!!e&&['rectangle','text','image'].includes(e.kind);
     const hover=this.hover===null?undefined:board.elements.find(e=>e.id===this.hover);if(usable(hover))return this.project(hover!);
     const selected=this.selected.length===1?board.elements.find(e=>e.id===this.selected[0]):undefined;return usable(selected)?this.project(selected!):null;
