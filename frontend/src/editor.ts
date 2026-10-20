@@ -24,6 +24,8 @@ export class Editor {
   private draft: { id: number; board: string; base:EditState; height:number } | null = null;
   // Saved text edits stay here by command id until confirmed, so a conflict can reopen the block with the user's words.
   private textSaves=new Map<string,TextSave>();private textConflict:TextSave|null=null;
+  // Saves whose block was never created: at the queue head they can only conflict, so they are dropped there.
+  private orphanSaves=new Set<string>();
   textEditor = new InlineTextEditor({input:draft=>this.textInput(draft),commit:()=>this.commitText()});
   slides = new SlideList(el('slides'), el('slide-count'), id => { this.select([id]); this.view.fit(id); });private panelKey='';
   comments = new Comments(this.view, {current:()=>this.board,commit:(board,ops,revision)=>this.commitComments(board,ops,revision),report:error=>this.report(error),confirm:async()=>{if(this.queue?.mode==='uncertain')await this.queue.retry();else if(this.queue?.mode==='conflict')this.discard();},anchorMode:()=>this.interaction.setTool('comment')});
@@ -83,7 +85,13 @@ export class Editor {
     const epoch=++this.selectionEpoch,boardId=this.board?.id;
     void queue.enqueue({label,operations,guards:makeGuards(base,operations)},()=>{
       if(this.queue===queue&&this.board?.id===boardId&&this.selectionEpoch===epoch)this.select(ids);
-    }).catch(()=>{});
+    }).catch(error=>{if(this.queue===queue)this.createRejected(ids,error);});
+  }
+  // A rejected create leaves nothing to edit, and the agent's next object may take the same id.
+  private createRejected(ids:number[],error:unknown){
+    if(!(error instanceof ApiError)||['connection','persistence','request'].includes(error.code))return;
+    for(const [commandId,save] of this.textSaves)if(ids.includes(save.id)){this.textSaves.delete(commandId);this.orphanSaves.add(commandId);}
+    if(this.draft&&ids.includes(this.draft.id)){this.closeText();this.promptOperation();}
   }
   private clipboardAllowed(){return !!this.board&&!!this.queue&&!this.opening&&!this.draft&&!this.presentation.active&&!isTextTarget(document.activeElement)&&!document.querySelector('dialog[open]')&&!this.interaction.gesture;}
   private copy(event:ClipboardEvent){
@@ -121,6 +129,7 @@ export class Editor {
   }
   private syncQueue() {
     const queue=this.queue;if(!queue)return;
+    if(queue.mode==='conflict'&&this.orphanSaves.delete(queue.inFlightId??'')){this.discard();return;}
     this.board=queue.projected();this.view.project(this.board);if(this.panelState()!==this.panelKey)this.panels();this.followText();
     const history=queue.summary;
     for(const [id,action,verb]of [['undo',history.undo,'Отменить'],['redo',history.redo,'Повторить']]as const){const button=el<HTMLButtonElement>(id);button.disabled=!action;button.title=action?`${verb}: ${action.label}`:`${verb}: история пуста`;button.setAttribute('aria-description',button.title);}
@@ -128,8 +137,13 @@ export class Editor {
     if(problem){
       const uncertain=queue.mode==='uncertain';el('operation-message').textContent=uncertain?'Ответ на сохранение не подтверждён. Проверим, было ли действие сохранено; повтор не выполнит его дважды.':queue.error instanceof Error?queue.error.message:'Свойства объекта изменились. Просмотрите изменения или отмените несохранённое действие.';
       el('operation-retry').textContent=uncertain?'Повторить сохранение':'Посмотреть изменения';el<HTMLButtonElement>('operation-discard').disabled=uncertain;
-      if(this.queueError!==queue.error){this.queueError=queue.error;if(queue.error)this.report(queue.error);if(!this.comments.isSending&&(uncertain||!this.draft&&!this.ownTextConflict()))el<HTMLDialogElement>('operation-dialog').showModal();}
+      if(this.queueError!==queue.error){this.queueError=queue.error;if(queue.error)this.report(queue.error);this.promptOperation();}
     }else{this.queueError=null;const dialog=el<HTMLDialogElement>('operation-dialog');if(dialog.open)dialog.close();this.status(queue.hasPending?'Сохраняем…':'Все изменения сохранены');}
+  }
+  // An open draft holds the dialog back; an own text conflict is resolved on the bar instead.
+  private promptOperation(){
+    const queue=this.queue,dialog=el<HTMLDialogElement>('operation-dialog');if(!queue||dialog.open||this.comments.isSending)return;
+    if(queue.mode==='uncertain'||queue.mode==='conflict'&&!this.draft&&!this.ownTextConflict())dialog.showModal();
   }
   private boardsTimer=0;
   private scheduleBoards(){window.clearTimeout(this.boardsTimer);this.boardsTimer=window.setTimeout(()=>{void this.reloadBoards().catch(error=>this.report(error));},1000);}
@@ -184,7 +198,7 @@ export class Editor {
     const e=d.base.board.elements.find(e=>e.id===d.id);if(!e||!this.queue||!this.view.metrics||this.board?.id!==d.board)return;
     const operations=textOperations(e,values,growHeight(e,values,this.view.metrics));if(!operations.length)return;
     const save:TextSave={commandId:crypto.randomUUID(),id:d.id,board:d.board,draft:values};this.textSaves.set(save.commandId,save);
-    this.queue.enqueue({label:'Изменение текста',operations,guards:makeGuards(d.base,operations)},()=>this.textSaves.delete(save.commandId),save.commandId)
+    this.queue.enqueue({label:'Изменение текста',operations,guards:makeGuards(d.base,operations)},()=>{this.textSaves.delete(save.commandId);this.orphanSaves.delete(save.commandId);},save.commandId)
       .catch(()=>{if(!this.textSaves.has(save.commandId))return;if(this.conflictedSave()===save)this.showTextConflict(save);else this.textSaves.delete(save.commandId);});
   }
   private closeText() {this.draft=null;this.textConflict=null;el('text-conflict').hidden=true;this.textEditor.close();this.view.setEditing(null);}

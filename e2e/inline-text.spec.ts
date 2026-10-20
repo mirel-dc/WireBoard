@@ -190,3 +190,22 @@ test('cancelling_a_conflict_on_an_earlier_save_unblocks_the_queue',async({page})
   await expect.poll(()=>texts(page,id)).toEqual([[1,'Агент'],[2,'Второй']]);
   await expect(page.locator('#text-conflict')).toBeHidden();await expect(page.locator('#operation-return')).toBeHidden();await expect(page.locator('#status')).toHaveText('Все изменения сохранены');
 });
+async function createDuringAgentCreate(page:Page,commit:boolean){
+  const id=await setup(page);const release=await holdFirstApply(page,id);
+  await page.getByRole('button',{name:'Блок (R)',exact:true}).click();await page.locator('#canvas').click({position:{x:700,y:420}});
+  await expect(editor(page)).toBeVisible();await page.keyboard.type('Мой');if(commit){await page.keyboard.press('Escape');await expect(editor(page)).toBeHidden();}
+  await apply(page,id,1,[{op:'create',element:{kind:'rectangle',x:420,y:300,text:'Агент'}}]);await expect(page.locator('#scene [data-id="2"]')).toHaveAttribute('transform','translate(420 300)');
+  const agent=(await board(page,id)).elements[1];release();return {id,agent};
+}
+test('a_rejected_create_closes_its_editor_and_shows_the_dialog',async({page})=>{
+  const {id,agent}=await createDuringAgentCreate(page,false);
+  await expect(page.locator('#operation-dialog')).toBeVisible();await expect(editor(page)).toBeHidden();
+  await page.locator('#operation-discard').click();await expect(page.locator('#operation-dialog')).toBeHidden();
+  await page.waitForTimeout(300);expect((await board(page,id)).elements[1]).toEqual(agent);await expect(page.locator('#text-conflict')).toBeHidden();
+});
+test('a_save_queued_behind_a_rejected_create_is_dropped',async({page})=>{
+  const {id,agent}=await createDuringAgentCreate(page,true);
+  await expect(page.locator('#operation-dialog')).toBeVisible();await page.locator('#operation-discard').click();
+  await page.waitForTimeout(300);await expect(page.locator('#text-conflict')).toBeHidden();await expect(editor(page)).toBeHidden();
+  await expect(page.locator('#operation-dialog')).toBeHidden();await expect(page.locator('#operation-return')).toBeHidden();expect((await board(page,id)).elements[1]).toEqual(agent);
+});
