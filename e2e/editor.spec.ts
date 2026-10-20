@@ -84,7 +84,7 @@ test('image, portable JSON import and slide presentation', async ({ page }) => {
 
 test('drag merges independent agent text without manual overwrite', async ({ page }) => {
   const id=await newBoard(page);
-  await page.getByRole('button',{name:'Блок (R)',exact:true}).click();await page.locator('#canvas').click({position:{x:240,y:230}});
+  await page.getByRole('button',{name:'Блок (R)',exact:true}).click();await page.locator('#canvas').click({position:{x:240,y:230}});await page.keyboard.press('Escape');
   await expect.poll(async()=>(await board(page,id)).revision).toBe(1);
   await expect(page.locator('#status')).toHaveText('Все изменения сохранены');
   await expect(page.locator('#scene [data-id="1"]')).toBeVisible();

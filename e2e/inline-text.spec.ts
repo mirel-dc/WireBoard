@@ -125,3 +125,26 @@ test('connector_caption_is_edited_in_place',async({page})=>{
   await page.locator('#text-draft').fill('новая подпись');await page.locator('#text-draft').press('Escape');
   await expect.poll(async()=>(await board(page,id)).elements[2].text).toBe('новая подпись');await expect(page.locator('#scene [data-id="3"] [data-connector-label]')).toBeVisible();
 });
+test('block_tool_click_creates_an_empty_card_ready_for_typing',async({page})=>{
+  const id=await setup(page);await page.getByRole('button',{name:'Блок (R)',exact:true}).click();await page.locator('#canvas').click({position:{x:700,y:420}});
+  await expect(editor(page)).toBeVisible();await expect(page.locator('#title-draft')).toBeFocused();
+  await expect.poll(async()=>(await board(page,id)).elements.length).toBe(2);const created=(await board(page,id)).elements[1];expect([created.title,created.text]).toEqual(['','']);
+  await page.keyboard.type('Оплата');await page.keyboard.press('Enter');await page.keyboard.type('проверка карты');await page.keyboard.press('Escape');
+  await expect.poll(async()=>{const e=(await board(page,id)).elements[1];return [e.title,e.text];}).toEqual(['Оплата','проверка карты']);
+});
+test('text_tool_click_opens_an_empty_text_block',async({page})=>{
+  const id=await setup(page);await page.getByRole('button',{name:'Текст (T)',exact:true}).click();await page.locator('#canvas').click({position:{x:700,y:420}});
+  await expect(page.locator('#text-draft')).toBeFocused();await expect(page.locator('#title-draft')).toBeHidden();
+  await page.keyboard.type('Мысль');await page.keyboard.press('Escape');await expect.poll(async()=>(await board(page,id)).elements[1]?.text).toBe('Мысль');
+});
+test('new_frame_label_is_selected_for_replacement',async({page})=>{
+  const id=await setup(page);await page.getByRole('button',{name:'Слайд (F)',exact:true}).click();await page.locator('#canvas').click({position:{x:700,y:420}});
+  await expect(editor(page)).toHaveAttribute('data-kind','frame');const selection=await page.locator('#text-draft').evaluate(t=>[(t as HTMLTextAreaElement).selectionStart,(t as HTMLTextAreaElement).selectionEnd,(t as HTMLTextAreaElement).value]);
+  expect(selection).toEqual([0,11,'Новый фрейм']);await page.keyboard.type('Слайд');await page.keyboard.press('Enter');
+  await expect.poll(async()=>(await board(page,id)).elements.find((e:{kind:string})=>e.kind==='frame')?.text).toBe('Слайд');
+});
+test('editing_at_low_zoom_zooms_in_to_half',async({page})=>{
+  await page.emulateMedia({reducedMotion:'reduce'});await setup(page);for(let i=0;i<7;i++)await page.locator('#zoom-out').click();
+  expect((await camera(page)).zoom).toBeLessThan(.3);const small=await box(page);await page.mouse.click(small.x+small.width/2,small.y+small.height/2);await page.keyboard.press('Enter');await expect(editor(page)).toBeVisible();await expect.poll(async()=>(await camera(page)).zoom).toBeCloseTo(.5,5);
+  const e=await bounding(editor(page)),b=await box(page);expect(Math.abs(e.x-b.x)+Math.abs(e.y-b.y)).toBeLessThanOrEqual(3);
+});

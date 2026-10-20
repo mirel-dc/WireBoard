@@ -77,7 +77,6 @@ test('Back keeps a text draft and the address of its board',async({page})=>{
   await page.locator('#canvas').click({position:{x:200,y:180}});
   await expect(page.locator('#scene [data-id="1"]')).toBeVisible();
   await expect(page.locator('#status')).toContainText('сохранены');
-  await page.locator('#scene [data-id="1"]').dblclick();
   await page.locator('#text-draft').fill('Не потерять текст');
   const address=page.url();
   const id=await page.locator('#canvas').getAttribute('data-board');

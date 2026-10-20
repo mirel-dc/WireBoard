@@ -13,7 +13,7 @@ try{
   const metrics=await page.evaluate(()=>({dpr:devicePixelRatio,inner:innerWidth,outer:outerWidth}));
   expect(metrics.dpr).toBeCloseTo(2);expect(metrics.inner).toBeLessThan(metrics.outer*.6);
   await page.locator('#new-board').click();await page.locator('#create-title').fill('Zoom 200% UX');await page.getByRole('button',{name:'Создать',exact:true}).click();await expect(page.locator('#board-title')).toHaveText('Zoom 200% UX');
-  await page.locator('[data-tool="rectangle"]').click();await page.locator('#canvas').click({position:{x:220,y:170}});await expect(page.locator('#scene [data-id="1"]')).toBeVisible();await expect(page.locator('#status')).toContainText('сохранены');
+  await page.locator('[data-tool="rectangle"]').click();await page.locator('#canvas').click({position:{x:220,y:170}});await page.keyboard.press('Escape');await expect(page.locator('#scene [data-id="1"]')).toBeVisible();await expect(page.locator('#status')).toContainText('сохранены');
   const shape=page.locator('#scene [data-id="1"] > rect');await shape.click();await expect(page.locator('[data-handle]')).toHaveCount(8);
   for(const name of ['n','ne','e','se','s','sw','w','nw']){let b;await expect.poll(async()=>{b=await page.locator(`[data-handle="${name}"] > rect`).first().boundingBox();return b?.width??0;}).toBeGreaterThanOrEqual(23.9);expect(b.height).toBeGreaterThanOrEqual(23.9);}
   await expect(page.locator('#undo')).toBeInViewport();

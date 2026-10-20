@@ -3,7 +3,7 @@ import {CLIPBOARD_TYPE,copySelection,parseClipboard,pasteSelection} from './clip
 import {command as shortcut,isTextTarget} from './keyboard';
 import { Comments } from './comments';
 import { InlineTextEditor } from './text-editor';
-import {draftOf,growHeight,textOperations,type TextDraft} from './text-model';
+import {MIN_EDIT_ZOOM,draftOf,growHeight,textOperations,type TextDraft} from './text-model';
 import { installIcons } from './icons';
 import { api, ApiError } from './api';
 import { CanvasView, orderedFrames } from './canvas';
@@ -26,7 +26,7 @@ export class Editor {
   textEditor = new InlineTextEditor({input:draft=>this.textInput(draft),commit:()=>this.commitText()});
   slides = new SlideList(el('slides'), el('slide-count'), id => { this.select([id]); this.view.fit(id); });private panelKey='';
   comments = new Comments(this.view, {current:()=>this.board,commit:(board,ops,revision)=>this.commitComments(board,ops,revision),report:error=>this.report(error),confirm:async()=>{if(this.queue?.mode==='uncertain')await this.queue.retry();else if(this.queue?.mode==='conflict')this.discard();},anchorMode:()=>this.interaction.setTool('comment')});
-  interaction = new Interaction(this.view, { current: () => this.board, editState:()=>this.queue!.projectedState(), busy: () => this.opening || !!this.draft, apply: (ops, revision, base) => this.apply(ops, revision, base), create:(element,base)=>this.createObjects([{op:'create',element}],[base.board.nextId],base,'Создание объекта'),select: ids => this.select(ids), edit: id => this.editText(id), comment: (anchor, point) => this.comments.place(anchor, point), tool: tool => this.tool(tool), changed: () => { if (this.queued) void this.refresh(); }, report: error => this.report(error) });
+  interaction = new Interaction(this.view, { current: () => this.board, editState:()=>this.queue!.projectedState(), busy: () => this.opening || !!this.draft, apply: (ops, revision, base) => this.apply(ops, revision, base), create:(element,base)=>{this.createObjects([{op:'create',element}],[base.board.nextId],base,'Создание объекта');this.editText(base.board.nextId,element.kind==='frame');},select: ids => this.select(ids), edit: id => this.editText(id), comment: (anchor, point) => this.comments.place(anchor, point), tool: tool => this.tool(tool), changed: () => { if (this.queued) void this.refresh(); }, report: error => this.report(error) });
   presentation = new Presentation(error => this.report(error));
   constructor() {
     this.view.onCamera = () => { el('zoom-value').textContent = `${Math.round(this.view.camera.zoom * 100)}%`; this.scheduleSaveView(); };
@@ -159,7 +159,12 @@ export class Editor {
     const e=this.board.elements.find(e=>e.id===id);if(!e)return;
     this.draft={id,board:this.board.id,base:this.queue.projectedState(),height:e.height};this.openText(e,draftOf(e),selectAll);
   }
-  private openText(e:BoardElement,draft:TextDraft,selectAll=false) {this.view.setEditing(e.id);this.textEditor.show(e,draft,selectAll);this.positionText();}
+  private openText(e:BoardElement,draft:TextDraft,selectAll=false) {
+    this.view.setEditing(e.id);this.textEditor.show(e,draft,selectAll);this.positionText();
+    // Text scaled below half size is unreadable; zoom around the block so it stays under the cursor.
+    const zoom=this.view.camera.zoom,box=this.view.textBox(e.id);
+    if(zoom<MIN_EDIT_ZOOM&&box){const rect=this.view.svg.getBoundingClientRect();this.view.animateZoom(MIN_EDIT_ZOOM/zoom,rect.x+this.view.camera.x+(box.x+box.width/2)*zoom,rect.y+this.view.camera.y+(box.y+box.height/2)*zoom);}
+  }
   private positionText() {
     if(!this.draft)return;const box=this.view.textBox(this.draft.id);if(!box)return;const camera=this.view.camera;this.textEditor.position(box,camera);
     if(this.textConflict){const bar=el('text-conflict');bar.style.left=`${camera.x+box.x*camera.zoom}px`;bar.style.top=`${camera.y+(box.y+box.height)*camera.zoom+8}px`;}

@@ -162,7 +162,7 @@ test('creation reverse drag previews before commit and Undo removes one object',
   const id=await setup(page);await page.locator('[data-tool="rectangle"]').click();const a=await screen(page,460,340),b=await screen(page,340,240);
   await page.mouse.move(a.x,a.y);await page.mouse.down();await page.mouse.move(b.x,b.y,{steps:4});
   await expect(page.locator('[data-creation-preview]')).toBeVisible();expect((await board(page,id)).elements).toHaveLength(1);
-  await page.mouse.up();await expect.poll(async()=>(await board(page,id)).elements.length).toBe(2);const e=(await board(page,id)).elements[1];expect(e.x).toBeCloseTo(340);expect(e.y).toBeCloseTo(240);expect(e.width).toBeCloseTo(120);expect(e.height).toBeCloseTo(100);
+  await page.mouse.up();await page.keyboard.press('Escape');await expect.poll(async()=>(await board(page,id)).elements.length).toBe(2);const e=(await board(page,id)).elements[1];expect(e.x).toBeCloseTo(340);expect(e.y).toBeCloseTo(240);expect(e.width).toBeCloseTo(120);expect(e.height).toBeCloseTo(100);
   await page.keyboard.press('Control+z');await expect.poll(async()=>(await board(page,id)).elements.length).toBe(1);await page.keyboard.press('Control+Shift+z');await expect.poll(async()=>(await board(page,id)).elements.length).toBe(2);
 });
 
