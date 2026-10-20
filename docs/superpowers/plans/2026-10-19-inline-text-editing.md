@@ -779,7 +779,7 @@ git commit -m "test: budget inline typing and record stage 2a results"
 
 - unit: 28 из 28 зелёные.
 - chromium: 152 из 152 зелёные.
-- firefox: 145 зелёные, 4 пропущены (бюджеты откалиброваны под Chromium), 3 красные: `double_click_edits_inside_the_block`, `typing_grows_the_block_and_one_undo_reverts_text_and_height`, `editor_follows_wheel_pan_and_zoom` из `e2e/inline-text.spec.ts`. Падают 5 из 5 при отдельном прогоне и без правки `contain: layout`. Вероятная причина в тесте (замер: блок 222x114, редактор 220x112): Firefox, по-видимому, включает обводку SVG-фигуры (2 px) в `getBoundingClientRect`, поэтому `box()` блока на 2 px больше редактора, а допуск 1.5 (и 3 в зуме) это не покрывает.
+- firefox: 148 зелёные, 4 пропущены (бюджеты откалиброваны под Chromium). Три теста `e2e/inline-text.spec.ts` сначала падали из-за сравнения редактора с `getBoundingClientRect` SVG-фигуры: Firefox включает обводку в 2 px (фигура 222x114 против 220x112), редактор при этом точно совпадал с моделью. Теперь они сравнивают редактор с рамкой модели через `getBBox()` и `getScreenCTM()` (хелпер `modelBox`), допуски прежние.
 - webkit: 147 зелёные, 5 пропущены (бюджеты под Chromium).
 - `cargo test`: 98 тестов, все зелёные.
 - `npm run typecheck` без ошибок.

@@ -2,13 +2,15 @@ import {test,expect,type Page} from '@playwright/test';
 import {setup,board,apply,box,bounding} from './ux-helpers';
 import {projectScene} from '../frontend/src/preview';
 const editor=(page:Page)=>page.locator('#text-editor');
+// The editor sits on the model geometry; getBoundingClientRect of an SVG shape includes the stroke in Firefox only.
+async function modelBox(page:Page,id=1){return page.locator(`#scene [data-id="${id}"]`).evaluate(e=>{const g=e as unknown as SVGGraphicsElement,m=g.getScreenCTM()!,b=g.getBBox(),p=new DOMPoint(b.x,b.y).matrixTransform(m);return {x:p.x,y:p.y,width:b.width*m.a,height:b.height*m.d};});}
 async function open(page:Page,id=1){const b=await box(page,id);await page.mouse.click(b.x+35,b.y+35);await page.keyboard.press('Enter');await expect(editor(page)).toBeVisible();}
 async function camera(page:Page){return page.locator('#world').evaluate(e=>{const m=(e as SVGGElement).transform.baseVal.consolidate()!.matrix;return{x:m.e,y:m.f,zoom:m.a};});}
 async function wheel(page:Page,init:WheelEventInit){await page.locator('#canvas').evaluate(async(e,init)=>{e.dispatchEvent(new WheelEvent('wheel',{...init,bubbles:true,cancelable:true}));await new Promise<void>(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())));},init);}
 test('double_click_edits_inside_the_block',async({page})=>{
   const id=await setup(page);const b=await box(page);await page.mouse.dblclick(b.x+35,b.y+35);
   await expect(editor(page)).toBeVisible();await expect(page.locator('#text-dialog')).toHaveCount(0);
-  const e=await bounding(editor(page));for(const k of ['x','y','width','height'] as const)expect(Math.abs(e[k]-b[k])).toBeLessThanOrEqual(1.5);
+  const e=await bounding(editor(page)),m=await modelBox(page);for(const k of ['x','y','width','height'] as const)expect(Math.abs(e[k]-m[k])).toBeLessThanOrEqual(1.5);
   await expect(page.locator('#scene [data-id="1"] text')).toHaveCount(0);await expect(page.locator('[data-handle="e"]')).toBeHidden();
   await expect(page.locator('#text-draft')).toBeFocused();await page.keyboard.type(' plus');await page.keyboard.press('Escape');
   await expect(editor(page)).toBeHidden();await expect.poll(async()=>(await board(page,id)).elements[0].text).toBe('Card plus');await expect(page.locator('#scene [data-id="1"]')).toContainText('Card plus');
@@ -33,7 +35,7 @@ test('multi_line_paste_into_the_title_moves_the_rest_down',async({page})=>{
 test('typing_grows_the_block_and_one_undo_reverts_text_and_height',async({page})=>{
   const id=await setup(page);const before=await box(page);await open(page);await page.locator('#text-draft').fill('Длинное описание '.repeat(20));
   await expect.poll(async()=>(await box(page)).height).toBeGreaterThan(before.height+20);
-  expect(Math.abs((await bounding(editor(page))).height-(await box(page)).height)).toBeLessThanOrEqual(1.5);
+  expect(Math.abs((await bounding(editor(page))).height-(await modelBox(page)).height)).toBeLessThanOrEqual(1.5);
   await page.keyboard.press('Escape');await expect.poll(async()=>(await board(page,id)).revision).toBe(2);expect((await board(page,id)).elements[0].height).toBeGreaterThan(112);
   await page.keyboard.press('Control+z');await expect.poll(async()=>(await board(page,id)).revision).toBe(3);const e=(await board(page,id)).elements[0];expect([e.text,e.height]).toEqual(['Card',112]);
 });
@@ -51,7 +53,7 @@ test('editor_follows_wheel_pan_and_zoom',async({page})=>{
   const id=await setup(page);await open(page);await page.locator('#text-draft').fill('Черновик');const start=await bounding(editor(page));
   await wheel(page,{deltaX:25,deltaY:35});await expect.poll(async()=>(await bounding(editor(page))).x).toBeCloseTo(start.x-25,0);
   await wheel(page,{deltaY:-100,ctrlKey:true,clientX:start.x,clientY:start.y});
-  await expect.poll(async()=>{const e=await bounding(editor(page)),b=await box(page);return Math.abs(e.width-b.width)+Math.abs(e.x-b.x)+Math.abs(e.y-b.y);}).toBeLessThanOrEqual(3);
+  await expect.poll(async()=>{const e=await bounding(editor(page)),b=await modelBox(page);return Math.abs(e.width-b.width)+Math.abs(e.x-b.x)+Math.abs(e.y-b.y);}).toBeLessThanOrEqual(3);
   await expect(page.locator('#text-draft')).toHaveValue('Черновик');await expect(page.locator('#text-draft')).toBeFocused();expect((await board(page,id)).revision).toBe(1);
 });
 test('window_blur_keeps_the_draft_open',async({page})=>{
