@@ -228,3 +228,22 @@ test('clearing_a_text_block_deletes_it_and_undo_restores_it',async({page})=>{
   await expect.poll(async()=>(await board(page,id)).elements.map((e:{kind:string})=>e.kind)).toEqual(['rectangle']);await expect(page.locator('#undo')).toHaveAttribute('title',/Удаление объекта/);
   await page.keyboard.press('Control+z');await expect.poll(()=>texts(page,id)).toEqual([[1,'Card'],[2,'Мысль']]);
 });
+test('control_enter_saves',async({page})=>{
+  const id=await setup(page);await open(page);await page.locator('#text-draft').fill('Ctrl');await page.keyboard.press('ControlOrMeta+Enter');
+  await expect(editor(page)).toBeHidden();await expect.poll(()=>texts(page,id)).toEqual([[1,'Ctrl']]);
+});
+test('moving_focus_to_another_page_element_saves',async({page})=>{
+  const id=await setup(page);await open(page);await page.locator('#text-draft').fill('Фокус');await page.locator('#board-search').focus();
+  await expect(editor(page)).toBeHidden();await expect.poll(()=>texts(page,id)).toEqual([[1,'Фокус']]);
+  await open(page);await page.locator('#text-draft').fill('Клик');await page.locator('#board-search').click();
+  await expect(editor(page)).toBeHidden();await expect.poll(()=>texts(page,id)).toEqual([[1,'Клик']]);
+});
+test('a_tool_change_saves',async({page})=>{
+  const id=await setup(page);await open(page);await page.locator('#text-draft').fill('Инструмент');await page.locator('button[data-tool="hand"]').click();
+  await expect(editor(page)).toBeHidden();await expect.poll(()=>texts(page,id)).toEqual([[1,'Инструмент']]);await expect(page.locator('button[data-tool="hand"]')).toHaveAttribute('aria-pressed','true');
+});
+test('the_context_edit_button_opens_the_editor',async({page})=>{
+  await setup(page);const b=await box(page);await page.mouse.click(b.x+35,b.y+35);await page.locator('#context-edit').click();
+  await expect(editor(page)).toBeVisible();await expect(page.locator('#text-draft')).toBeFocused();
+  const e=await bounding(editor(page)),m=await modelBox(page);expect(Math.abs(e.x-m.x)+Math.abs(e.y-m.y)).toBeLessThanOrEqual(3);
+});
