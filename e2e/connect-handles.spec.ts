@@ -146,6 +146,10 @@ test('switching_tool_during_a_drag_cancels_it',async({page})=>{
   const id=await setup(page);const d=await grabDot(page);await page.mouse.move(d.x+120,d.y+60,{steps:6});await expect(page.locator('[data-wire-preview]')).toBeVisible();
   await page.keyboard.press('KeyR');await expect(page.locator('[data-wire-preview]')).toBeHidden();await page.mouse.up();await page.waitForTimeout(200);expect((await board(page,id)).revision).toBe(1);
 });
+test('focus_leaving_the_canvas_during_a_drag_cancels_it',async({page})=>{
+  const id=await setup(page);const d=await grabDot(page);await page.mouse.move(d.x+120,d.y+60,{steps:6});await expect(page.locator('[data-wire-preview]')).toBeVisible();
+  await page.locator('[data-tool="hand"]').focus();await expect(page.locator('[data-tool="hand"]')).toBeFocused();await expect(page.locator('[data-wire-preview]')).toBeHidden();await page.mouse.up();await page.waitForTimeout(200);expect((await board(page,id)).revision).toBe(1);
+});
 test('a_slipped_click_on_a_plus_still_counts_as_a_click',async({page})=>{
   const id=await setup(page);await apply(page,id,1,[{op:'create',element:{kind:'rectangle',x:400,y:100,text:'Busy'}}]);await expect(page.locator('#scene [data-id="2"]')).toBeVisible();
   await hoverCard(page);const plus=await bounding(page.locator('[data-add="1"][data-side="right"]')),p={x:plus.x+plus.width/2,y:plus.y+plus.height/2};await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(p.x,p.y+6,{steps:3});await page.mouse.up();
@@ -156,7 +160,8 @@ test('handles_hide_during_move_resize_and_marquee',async({page})=>{
   await setup(page);const b=await box(page),all=page.locator('[data-connect]');
   await page.mouse.move(b.x+35,b.y+35);await page.mouse.down();await page.mouse.move(b.x+65,b.y+35,{steps:4});await expect(all).toHaveCount(0);await page.mouse.up();await expect(all).toHaveCount(4);
   const se=await bounding(page.locator('[data-handle="se"]'));await page.mouse.move(se.x+se.width/2,se.y+se.height/2);await page.mouse.down();await page.mouse.move(se.x+se.width/2+30,se.y+se.height/2+30,{steps:4});await expect(all).toHaveCount(0);await page.mouse.up();
-  const c=await box(page);await page.mouse.move(c.x+c.width+150,c.y+c.height+120);await page.mouse.down();await page.mouse.move(c.x+c.width+250,c.y+c.height+200,{steps:4});await expect(page.locator('#selection rect[fill="#7e4bb220"]')).toBeVisible();await expect(all).toHaveCount(0);await page.mouse.up();
+  // Shift keeps the card selected, so only the marquee gate can hide its dots.
+  const c=await box(page);await page.mouse.move(c.x+c.width+150,c.y+c.height+120);await expect(all).toHaveCount(4);await page.keyboard.down('Shift');await page.mouse.down();await page.mouse.move(c.x+c.width+250,c.y+c.height+200,{steps:4});await expect(page.locator('#selection rect[fill="#7e4bb220"]')).toBeVisible();await expect(all).toHaveCount(0);await page.mouse.up();await page.keyboard.up('Shift');
 });
 test('plus_on_an_image_copies_the_image',async({page})=>{
   const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
