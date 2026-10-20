@@ -764,3 +764,22 @@ Expected: всё зелёное. Красный тест показать с в�
 git add e2e/perf.spec.ts docs/superpowers
 git commit -m "test: budget inline typing and record stage 2a results"
 ```
+
+## Результаты
+
+Замеры на доске из 300 элементов, Chromium, тест `typing_in_the_inline_editor_fits_one_frame` (318 нажатий, 15 кадров при росте блока): p90 обработчика `input` 0.6–0.7 мс, p90 кадра при наборе 2.4–3.9 мс, сумма не выше 4.6 мс при бюджете 16 мс (три прогона подряд).
+
+До правки сумма была 18.6–22.7 мс: `fit()` редактора на каждое нажатие переверстывал весь документ (~10 мс), потому что изменение высоты textarea доходило до процентного SVG и заставляло пересчитать все 3556 объектов сцены. `contain: layout` на `.text-editor` останавливает перекладку на редакторе (коммит `perf: isolate the inline editor layout from the scene`), обработчик стал ~0.5 мс.
+
+Тест набирает фразу шесть раз подряд: одной фразы не хватает, чтобы блок вырос, и кадров с `wireboardFrameStats` не набирается вовсе.
+
+`drop_handler_and_next_frame_fit_one_frame` (обработчик pointerup + кадр, бюджет 16 мс), `--repeat-each=5` по одному: ветка 8.8, 9.9, 12.0, 12.3, 12.5 мс (5 из 5); база 9a4484d 8.8, 8.8, 11.5, 13.2, 13.9 мс (5 из 5). Регрессии нет, редкие промахи при полном прогоне — чувствительность к нагрузке.
+
+Итоги `npx playwright test` на финальном дереве (484 теста, два полных прогона дали один результат):
+
+- unit: 28 из 28 зелёные.
+- chromium: 152 из 152 зелёные.
+- firefox: 145 зелёные, 4 пропущены (бюджеты откалиброваны под Chromium), 3 красные: `double_click_edits_inside_the_block`, `typing_grows_the_block_and_one_undo_reverts_text_and_height`, `editor_follows_wheel_pan_and_zoom` из `e2e/inline-text.spec.ts`. Падают 5 из 5 при отдельном прогоне и без правки `contain: layout`. Вероятная причина в тесте (замер: блок 222x114, редактор 220x112): Firefox, по-видимому, включает обводку SVG-фигуры (2 px) в `getBoundingClientRect`, поэтому `box()` блока на 2 px больше редактора, а допуск 1.5 (и 3 в зуме) это не покрывает.
+- webkit: 147 зелёные, 5 пропущены (бюджеты под Chromium).
+- `cargo test`: 98 тестов, все зелёные.
+- `npm run typecheck` без ошибок.

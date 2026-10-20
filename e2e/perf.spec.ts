@@ -37,4 +37,11 @@ test.describe('smoothness budget on 300 elements',()=>{
     const result=await page.evaluate(()=>{const w=globalThis as unknown as Stats&{upStart:number;upEnd:number};return {handler:w.upEnd-w.upStart,frame:w.wireboardFrameStats[0]??0};});
     expect(result.handler+result.frame).toBeLessThanOrEqual(FRAME_BUDGET_MS);
   });
+  test('typing_in_the_inline_editor_fits_one_frame',async({page})=>{
+    await bigBoard(page);const b=await box(page);await page.mouse.click(b.x+35,b.y+35);await page.keyboard.press('Enter');await expect(page.locator('#text-editor')).toBeVisible();
+    await page.evaluate(()=>{const w=window as unknown as {inputs:number[];inputStart:number};w.inputs=[];addEventListener('input',()=>{w.inputStart=performance.now();},{capture:true});addEventListener('input',()=>{w.inputs.push(performance.now()-w.inputStart);});});
+    const typing=await frames(page,async()=>{await page.keyboard.type('Длинное описание для проверки роста блока при наборе '.repeat(6),{delay:20});});
+    const handlers=await page.evaluate(()=>(window as unknown as {inputs:number[]}).inputs);
+    expect(handlers.length).toBeGreaterThan(20);expect(typing.length).toBeGreaterThan(5);expect(p90(handlers)+p90(typing)).toBeLessThanOrEqual(FRAME_BUDGET_MS);
+  });
 });
