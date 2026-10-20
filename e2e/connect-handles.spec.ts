@@ -20,6 +20,7 @@ test('selected_card_keeps_handles_without_hover',async({page})=>{
 test('no_handles_on_frames_connectors_multi_selection_or_while_editing',async({page})=>{
   const id=await setup(page);await apply(page,id,1,[{op:'create',element:{kind:'rectangle',x:420,y:100,text:'B'}},{op:'create',element:{kind:'connector',from:1,to:2,text:'link'}},{op:'create',element:{kind:'frame',x:100,y:400,width:300,height:200,text:'F'}}]);
   await expect(page.locator('#scene [data-id="4"]')).toBeVisible();const all=page.locator('[data-connect]');
+  await hoverCard(page);await expect(all).toHaveCount(4);
   await page.locator('#scene [data-id="4"] [data-frame-header-hit]').hover();await expect(all).toHaveCount(0);
   await page.locator('#scene [data-id="3"] [data-connector-label]').hover();await expect(all).toHaveCount(0);
   const a=await box(page,1),b=await box(page,2);await page.mouse.click(a.x+35,a.y+35);await page.keyboard.down('Shift');await page.mouse.click(b.x+35,b.y+35);await page.keyboard.up('Shift');
@@ -29,4 +30,9 @@ test('no_handles_on_frames_connectors_multi_selection_or_while_editing',async({p
 test('handles_hide_on_a_block_smaller_than_40px_on_screen',async({page})=>{
   const id=await setup(page);await apply(page,id,1,[{op:'create',element:{kind:'rectangle',x:420,y:100,width:30,height:30,text:''}}]);await expect(page.locator('#scene [data-id="2"]')).toBeVisible();
   await hoverCard(page,2);await expect(dots(page,2)).toHaveCount(0);
+});
+test('edge_resize_handle_still_wins_near_a_dot',async({page})=>{
+  const id=await setup(page);const card=await box(page);await page.mouse.click(card.x+35,card.y+35);
+  const b=await bounding(page.locator('[data-handle="e"]'));await page.mouse.move(b.x+b.width-2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width-2+40,b.y+b.height/2,{steps:4});await page.mouse.up();
+  await expect.poll(async()=>(await board(page,id)).elements[0].width).toBeGreaterThan(220);expect((await board(page,id)).elements).toHaveLength(1);
 });

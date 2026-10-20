@@ -24,7 +24,7 @@ export class OverlayRenderer {
   private dots=SIDES.map(side=>{const g=svgElement('g',{'data-side':side,cursor:'crosshair',display:'none','aria-label':'Протянуть связь'});g.append(svgElement('circle',{fill:'transparent'}),svgElement('circle',{fill:'#ffffff',stroke:ACCENT,'pointer-events':'none'}));return g;});
   private adds=SIDES.map(side=>{const g=svgElement('g',{'data-side':side,cursor:'pointer',display:'none','aria-label':'Добавить блок со связью'});g.append(svgElement('circle',{fill:ACCENT}),svgElement('path',{fill:'none',stroke:'#ffffff','stroke-linecap':'round','pointer-events':'none'}));return g;});
   private selectionKey='';
-  constructor(root:SVGGElement){this.create.append(this.createRect,this.createLabel);this.target.append(this.targetRect,this.targetDot);this.controls.append(...this.handles,...this.ends);this.connect.append(...this.dots,...this.adds);root.replaceChildren(this.hover,this.drop,this.create,this.target,this.frames,this.controls,this.connect,this.marquee);}
+  constructor(root:SVGGElement){this.create.append(this.createRect,this.createLabel);this.target.append(this.targetRect,this.targetDot);this.controls.append(...this.handles,...this.ends);this.connect.append(...this.dots,...this.adds);root.replaceChildren(this.hover,this.drop,this.create,this.target,this.frames,this.connect,this.controls,this.marquee);}
   render(s:OverlayState):void{
     const z=s.zoom;
     show(this.hover,!!s.hover);if(s.hover)setAttrs(this.hover,{x:s.hover.x-2,y:s.hover.y-2,width:s.hover.width+4,height:s.hover.height+4,'stroke-width':1/z});
