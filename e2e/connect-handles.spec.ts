@@ -45,7 +45,7 @@ test('plus_creates_a_linked_copy_in_each_direction',async({page})=>{
     revision++;await expect.poll(async()=>(await board(page,id)).revision).toBe(revision);
     const b=await board(page,id),block=b.elements.at(-2),link=b.elements.at(-1);
     expect([block.kind,block.x,block.y,block.width,block.height,block.fill,block.stroke,block.title,block.text]).toEqual(['rectangle',x,y,220,112,'#fff0b8','#ccad49','','']);
-    expect([link.kind,link.from,link.to,link.fromPort]).toEqual(['connector',1,block.id,side]);
+    expect([link.kind,link.from,link.to,link.fromPort,link.toPort]).toEqual(['connector',1,block.id,side,{right:'left',left:'right',top:'bottom',bottom:'top'}[side]]);
   }
 });
 test('plus_is_one_undo_step_and_opens_text_input',async({page})=>{
@@ -119,4 +119,48 @@ test('window_blur_during_a_drag_creates_nothing',async({page})=>{
   const id=await setup(page);const d=await grabDot(page);await page.mouse.move(d.x+120,d.y,{steps:6});await expect(page.locator('[data-wire-preview]')).toBeVisible();
   await page.evaluate(()=>window.dispatchEvent(new Event('blur')));await expect(page.locator('[data-wire-preview]')).toBeHidden();
   await page.mouse.up();await page.waitForTimeout(200);expect((await board(page,id)).revision).toBe(1);
+});
+test('pressing_a_plus_keeps_the_handles_on_its_block',async({page})=>{
+  const id=await setup(page);await hoverCard(page);const plus=await bounding(page.locator('[data-add="1"][data-side="right"]'));
+  await page.mouse.move(plus.x+plus.width/2,plus.y+plus.height/2);await page.mouse.down();await page.waitForTimeout(300);await expect(adds(page)).toHaveCount(4);
+  await page.mouse.up();await expect(page.locator('#text-editor')).toBeVisible();await page.keyboard.press('Escape');await expect.poll(async()=>(await board(page,id)).elements.length).toBe(3);
+});
+test('pressing_a_plus_does_not_move_the_handles_to_the_selected_block',async({page})=>{
+  const id=await setup(page);await apply(page,id,1,[{op:'create',element:{kind:'rectangle',x:420,y:100,text:'B'}}]);await expect(page.locator('#scene [data-id="2"]')).toBeVisible();
+  const b=await box(page,2);await page.mouse.click(b.x+35,b.y+35);await hoverCard(page);const plus=await bounding(page.locator('[data-add="1"][data-side="left"]'));
+  await page.mouse.move(plus.x+plus.width/2,plus.y+plus.height/2);await page.mouse.down();await page.waitForTimeout(300);
+  await expect(adds(page,1)).toHaveCount(4);await expect(adds(page,2)).toHaveCount(0);await page.mouse.up();
+});
+test('handles_show_only_under_the_select_tool',async({page})=>{
+  await setup(page);const b=await box(page);await page.mouse.click(b.x+35,b.y+35);await expect(dots(page)).toHaveCount(4);
+  await page.keyboard.press('KeyR');await expect(dots(page)).toHaveCount(0);await page.keyboard.press('KeyV');await expect(dots(page)).toHaveCount(4);
+});
+test('delete_and_undo_during_a_drag_change_nothing',async({page})=>{
+  const id=await setup(page);const b=await box(page);await page.mouse.click(b.x+35,b.y+35);
+  const d=await grabDot(page);await page.mouse.move(d.x+100,d.y,{steps:6});await expect(page.locator('[data-wire-preview]')).toBeVisible();
+  await page.keyboard.press('Delete');await page.waitForTimeout(200);expect((await board(page,id)).elements.some((e:{id:number})=>e.id===1)).toBe(true);
+  await page.keyboard.press('Control+z');await expect(page.locator('[data-wire-preview]')).toBeHidden();await page.waitForTimeout(200);expect((await board(page,id)).revision).toBe(1);
+  await page.mouse.up();await page.waitForTimeout(200);expect((await board(page,id)).revision).toBe(1);
+});
+test('switching_tool_during_a_drag_cancels_it',async({page})=>{
+  const id=await setup(page);const d=await grabDot(page);await page.mouse.move(d.x+120,d.y+60,{steps:6});await expect(page.locator('[data-wire-preview]')).toBeVisible();
+  await page.keyboard.press('KeyR');await expect(page.locator('[data-wire-preview]')).toBeHidden();await page.mouse.up();await page.waitForTimeout(200);expect((await board(page,id)).revision).toBe(1);
+});
+test('a_slipped_click_on_a_plus_still_counts_as_a_click',async({page})=>{
+  const id=await setup(page);await apply(page,id,1,[{op:'create',element:{kind:'rectangle',x:400,y:100,text:'Busy'}}]);await expect(page.locator('#scene [data-id="2"]')).toBeVisible();
+  await hoverCard(page);const plus=await bounding(page.locator('[data-add="1"][data-side="right"]')),p={x:plus.x+plus.width/2,y:plus.y+plus.height/2};await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(p.x,p.y+6,{steps:3});await page.mouse.up();
+  await expect(page.locator('#text-editor')).toBeVisible();await page.keyboard.press('Escape');await expect.poll(async()=>(await board(page,id)).elements.length).toBe(4);
+  const block=(await board(page,id)).elements.find((e:{id:number})=>e.id===3);expect([block.x,block.y]).toEqual([644,100]);
+});
+test('handles_hide_during_move_resize_and_marquee',async({page})=>{
+  await setup(page);const b=await box(page),all=page.locator('[data-connect]');
+  await page.mouse.move(b.x+35,b.y+35);await page.mouse.down();await page.mouse.move(b.x+65,b.y+35,{steps:4});await expect(all).toHaveCount(0);await page.mouse.up();await expect(all).toHaveCount(4);
+  const se=await bounding(page.locator('[data-handle="se"]'));await page.mouse.move(se.x+se.width/2,se.y+se.height/2);await page.mouse.down();await page.mouse.move(se.x+se.width/2+30,se.y+se.height/2+30,{steps:4});await expect(all).toHaveCount(0);await page.mouse.up();
+  const c=await box(page);await page.mouse.move(c.x+c.width+150,c.y+c.height+120);await page.mouse.down();await page.mouse.move(c.x+c.width+250,c.y+c.height+200,{steps:4});await expect(page.locator('#selection rect[fill="#7e4bb220"]')).toBeVisible();await expect(all).toHaveCount(0);await page.mouse.up();
+});
+test('plus_on_an_image_copies_the_image',async({page})=>{
+  const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+  const id=await setup(page);await apply(page,id,1,[{op:'create',element:{kind:'image',x:100,y:400,width:200,height:120,image}}]);await expect(page.locator('#scene [data-id="2"]')).toBeVisible();
+  await clickPlus(page,'bottom',2);await page.keyboard.press('Escape');await expect.poll(async()=>(await board(page,id)).elements.length).toBe(4);
+  const copy=(await board(page,id)).elements.find((e:{id:number})=>e.id===3);expect([copy.kind,copy.image,copy.width,copy.height]).toEqual(['image',image,200,120]);
 });
