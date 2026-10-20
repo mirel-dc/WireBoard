@@ -69,8 +69,8 @@ export class Interaction {
     const points=connectorPreviewPoints(board,link,'to',g.point,g.target),target=g.target?board.elements.find(e=>e.id===g.target!.id):undefined;
     this.view.previewWire(points,target&&points.length?{element:this.view.project(target),port:points.at(-1)!}:null);
   }
-  // Handles show only under the select tool, so a tool change repaints the overlay.
   cancelConnecting(){const type=this.gesture?.type;if(type==='connector-end'||type==='connect')this.cancel();}
+  // Handles show only under the select tool, so a tool change repaints the overlay.
   setTool(tool:Tool){this.cancelConnecting();this.tool=tool;this.connectorFrom=null;this.view.svg.dataset.tool=tool;this.view.frames.invalidate('overlay');this.callbacks.tool(tool);}
   private hover(event:PointerEvent){
     if(this.tool!=='select'||this.space){this.view.setHover(null);return;}
