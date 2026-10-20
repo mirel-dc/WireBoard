@@ -47,7 +47,7 @@ test('clipboard two pastes before ACK allocate distinct IDs and repeated offset'
 test('clipboard leaves native text fields alone and plain text creates text on canvas',async({page})=>{
   const id=await setup(page);await selectCard(page);await page.keyboard.press('Enter');await page.locator('#text-draft').fill('Native');
   expect(await copy(page)).toEqual({});await paste(page,{'text/plain':'Ordinary text'});expect((await board(page,id)).elements).toHaveLength(1);
-  await page.locator('#draft-cancel').click();await page.locator('#canvas').focus();await paste(page,{'text/plain':'Readable pasted text'});
+  await page.locator('#text-draft').fill('Card');await page.locator('#text-draft').press('Escape');await page.locator('#canvas').focus();await paste(page,{'text/plain':'Readable pasted text'});
   await expect.poll(async()=>(await board(page,id)).elements.length).toBe(2);expect((await board(page,id)).elements[1]).toMatchObject({kind:'text',text:'Readable pasted text'});
 });
 

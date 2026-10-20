@@ -131,11 +131,17 @@ p { line-height: 1.55; overflow-wrap: anywhere; }
 .comment-pin.resolved::before { background: oklch(43% .07 160); }
 .comment-pin.orphaned::before { border: 2px dashed var(--paper); }
 .pin-leader { position: absolute; border-block-start: 1px solid var(--accent); }
-.inline-editor { position: absolute; z-index: 6; border: 1px solid var(--line); background: var(--paper); border-radius: 16px; box-shadow: var(--shadow); padding: 20px; max-block-size: calc(100% - 100px); overflow-y: auto; }
-.inline-editor form { display: grid; gap: 14px; }
-.inline-editor h2 { font-size: 16px; margin: 0; }
-.inline-editor textarea { min-block-size: 100px; }
-.inline-editor .dialog-actions { margin: 0; }
+#canvas { user-select: none; -webkit-user-select: none; }
+.text-editor { position: absolute; z-index: 4; inset-block-start: 0; inset-inline-start: 0; transform-origin: 0 0; display: flex; flex-direction: column; justify-content: flex-start; padding: 16px; overflow: hidden; font-family: 'Golos Text', sans-serif; font-kerning: none; font-variant-ligatures: none; color: #302b3b; outline: 2px solid var(--accent); border-radius: 5px; }
+.text-editor[data-kind='rectangle'] { justify-content: center; text-align: center; }
+.text-editor[data-kind='text'] { padding: 4px; }
+.text-editor textarea { display: block; flex: none; inline-size: 100%; min-block-size: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; resize: none; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; color: inherit; text-align: inherit; caret-color: var(--accent); user-select: text; -webkit-user-select: text; }
+.text-editor textarea:focus-visible { outline: none; }
+.text-editor .title-field { font-size: var(--title-size); font-weight: 600; line-height: 1.25; }
+.text-editor .body-field { flex: 0 1 auto; overflow-y: auto; font-size: var(--text-size); font-weight: var(--text-weight); line-height: 1.4; }
+.text-editor .title-field:not([hidden]) + .body-field { margin-block-start: 8px; }
+.text-conflict { position: absolute; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-inline-size: 360px; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 8px 8px 8px 14px; user-select: text; }
+.text-conflict p { margin: 0; flex: 1 1 160px; }
 dialog { border: 1px solid var(--line); background: var(--paper); color: var(--ink); border-radius: 18px; padding: 28px; inline-size: min(460px, calc(100vw - 32px)); max-block-size: calc(100dvh - 40px); overflow-y: auto; box-shadow: 0 30px 100px color-mix(in oklch, var(--ink) 15%, transparent); }
 dialog::backdrop { background: color-mix(in oklch, var(--ink) 28%, transparent); }
 .dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-block-start: 24px; }

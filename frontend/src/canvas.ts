@@ -21,7 +21,7 @@ export class CanvasView {
   world = document.querySelector<SVGGElement>('#world')!;
   scene = document.querySelector<SVGGElement>('#scene')!;
   board: Board | null = null; selected: number[] = []; camera: Camera = { x: 80, y: 70, zoom: 1 };
-  metrics:FontMetrics|null=null;
+  metrics:FontMetrics|null=null;editing:number|null=null;private editingHeight:number|null=null;
   preview: { ids: number[]; dx: number; dy: number } | null = null;
   resizePreview: {id:number;width:number;height:number;x:number;y:number} | null = null;
   onCamera: (() => void) | null = null; onPins: (() => void) | null = null; onChrome: (() => void) | null = null;
@@ -33,7 +33,7 @@ export class CanvasView {
   private hover:number|null=null;private marqueeBounds:Bounds|null=null;private drop:number|null=null;private creation:{bounds:Bounds;kind:Kind}|null=null;private paintedZoom=0;
   constructor() { new ResizeObserver(() => this.updateCamera()).observe(this.svg); }
   setBoard(board: Board) { if(this.board?.id!==board.id){this.renderer.clear();this.board=null;this.hover=null;} this.svg.dataset.board = board.id; this.project(board); }
-  clear() { this.board=null;this.selected=[];this.hover=null;this.clearPreview();this.renderer.clear();delete this.svg.dataset.board;this.frames.invalidate('overlay');this.frames.invalidate('pins'); }
+  clear() { this.board=null;this.selected=[];this.hover=null;this.editing=null;this.editingHeight=null;this.renderer.editing=null;this.clearPreview();this.renderer.clear();delete this.svg.dataset.board;this.frames.invalidate('overlay');this.frames.invalidate('pins'); }
   updateCamera() { for(const layer of ['camera','overlay','pins','chrome'] as const)this.frames.invalidate(layer); }
   worldPoint(clientX: number, clientY: number) { const rect = this.svg.getBoundingClientRect(); return { x: (clientX - rect.x - this.camera.x) / this.camera.zoom, y: (clientY - rect.y - this.camera.y) / this.camera.zoom }; }
   pan(dx:number,dy:number){this.camera={...this.camera,x:clampCoordinate(this.camera.x-dx),y:clampCoordinate(this.camera.y-dy)};this.updateCamera();}
@@ -53,10 +53,14 @@ export class CanvasView {
   reveal(point:Point){this.zoomAnimation.stop();const rect=this.svg.getBoundingClientRect();this.camera={...this.camera,x:rect.width/2-point.x*this.camera.zoom,y:rect.height/2-point.y*this.camera.zoom};this.updateCamera();}
   setSelection(ids: number[]) { this.selected = ids.filter(id => this.board?.elements.some(e => e.id === id)); this.frames.invalidate('overlay'); }
   setHover(id:number|null){if(this.hover===id)return;this.hover=id;this.frames.invalidate('overlay');}
+  // The edited object hides its SVG text and selection; previewTextHeight survives clearPreview so a window blur keeps the grown block.
+  setEditing(id:number|null){if(this.editing===id)return;const ids=[this.editing,id].filter((v):v is number=>v!==null);this.editing=id;this.editingHeight=null;this.renderer.editing=id;this.previewChanged(ids);}
+  previewTextHeight(height:number|null){if(this.editing===null||this.editingHeight===height)return;this.editingHeight=height;this.previewChanged([this.editing]);this.frames.invalidate('chrome');}
+  textBox(id:number):Bounds|null{const raw=this.board?.elements.find(e=>e.id===id);if(!raw)return null;const e=this.project(raw);return{x:e.x,y:e.y,width:e.width,height:e.height};}
   project(e:Element):Element;
   project(board:Board):void;
   project(input:Element|Board):Element|void {
-    if('kind' in input){const resize=this.resizePreview?.id===input.id?this.resizePreview:null;const move=this.preview?.ids.includes(input.id)?this.preview:null;return {...input,x:resize?.x??input.x+(move?.dx??0),y:resize?.y??input.y+(move?.dy??0),width:resize?.width??input.width,height:resize?.height??input.height};}
+    if('kind' in input){const resize=this.resizePreview?.id===input.id?this.resizePreview:null;const move=this.preview?.ids.includes(input.id)?this.preview:null;return {...input,x:resize?.x??input.x+(move?.dx??0),y:resize?.y??input.y+(move?.dy??0),width:resize?.width??input.width,height:resize?.height??(input.id===this.editing?this.editingHeight:null)??input.height};}
     const dirty=changedIds(this.board,input);this.board=input;this.selected=this.selected.filter(id=>input.elements.some(e=>e.id===id));
     document.querySelector('#canvas-hint')!.toggleAttribute('hidden',input.elements.length>0);
     this.frames.invalidate('scene',dirty==='all'?undefined:dirty);this.frames.invalidate('overlay');this.frames.invalidate('pins');
@@ -90,11 +94,11 @@ export class CanvasView {
   }
   private paintOverlay(){
     const board=this.board,find=(id:number|null)=>id===null?null:board?.elements.find(e=>e.id===id)??null;
-    const selected=(board?.elements.filter(e=>this.selected.includes(e.id))??[]).map(e=>this.project(e)),single=selected.length===1?selected[0]:null;
+    const selected=(board?.elements.filter(e=>this.selected.includes(e.id)&&e.id!==this.editing)??[]).map(e=>this.project(e)),single=selected.length===1?selected[0]:null;
     let connectorEnds=null;if(single?.kind==='connector'){const points=this.linkPoints(single);connectorEnds={id:single.id,from:points[0]??null,to:points.at(-1)??null};}
     let connectorTarget=null;const p=this.connectorPreview,target=p?.target?p.board.elements.find(n=>n.id===p.target!.id):undefined;
     if(p&&target){const points=this.linkPoints(p.board.elements.find(n=>n.id===p.id)!),port=p.end==='from'?points[0]:points.at(-1);if(port)connectorTarget={element:target,port};}
-    const hover=find(this.hover),showHover=hover&&!this.selected.includes(hover.id)&&!this.preview&&!this.resizePreview;
+    const hover=find(this.hover),showHover=hover&&hover.id!==this.editing&&!this.selected.includes(hover.id)&&!this.preview&&!this.resizePreview;
     this.overlay.render({selected,connectorEnds,hover:showHover?this.project(hover):null,marquee:this.marqueeBounds,drop:find(this.drop),create:this.creation,connectorTarget,zoom:this.camera.zoom});
     // style.css matches [data-selected='true'].
     for(const group of this.scene.querySelectorAll(':scope > [data-kind="connector"]')){if(this.selected.includes(Number(group.getAttribute('data-id'))))group.setAttribute('data-selected','true');else group.removeAttribute('data-selected');}

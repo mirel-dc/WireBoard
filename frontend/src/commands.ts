@@ -135,8 +135,8 @@ export class CommandQueue {
   projected(){return this.projectedState().board;}
   get summary(){return this.projectedState().history;}
   private label(id:string){return this.cache.get(id)?.label??this.pending.find(p=>p.meta.id===id)?.meta.label??this.confirmed.history.undo?.label??this.confirmed.history.redo?.label??'Действие';}
-  enqueue(intent:EditIntent,onConfirmed?:(commandId:string)=>void):Promise<Board> {
-    const meta:CommandMeta={id:crypto.randomUUID(),actor:this.actor,label:intent.label};
+  enqueue(intent:EditIntent,onConfirmed?:(commandId:string)=>void,id:string=crypto.randomUUID()):Promise<Board> {
+    const meta:CommandMeta={id,actor:this.actor,label:intent.label};
     const before=this.projectedState(),after=projectOperations(before.board,intent.operations);
     this.cache.set(meta.id,{changes:changes(before,after,meta.id),previous:before.history,label:intent.label});
     if(this.cache.size>100){const live=new Set(this.pending.flatMap(p=>[p.meta.id,p.target]));for(const id of this.cache.keys())if(!live.has(id)&&id!==this.confirmed.history.undo?.commandId&&id!==this.confirmed.history.redo?.commandId){this.cache.delete(id);if(this.cache.size<=100)break;}}

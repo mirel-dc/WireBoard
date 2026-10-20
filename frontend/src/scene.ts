@@ -6,7 +6,7 @@ import {setAttrs,svgElement} from './svg';
 const SHAPES=['rectangle','text','image'];
 function textNode(row:TextRow,anchor:string){const t=svgElement('text',{x:row.x,y:row.y,'font-family':'Golos Text','font-size':row.size,'font-weight':row.weight,'font-kerning':'none','font-variant-ligatures':'none','text-anchor':anchor,fill:'#302b3b','pointer-events':'none'});const span=svgElement('tspan',{x:row.x,y:row.y});span.textContent=row.text;t.append(span);return t;}
 export class SceneRenderer {
-  private groups=new Map<number,SVGGElement>();private signatures=new Map<number,string>();private images=new Map<number,string|null>();private zoom=1;
+  private groups=new Map<number,SVGGElement>();private signatures=new Map<number,string>();private images=new Map<number,string|null>();private zoom=1;editing:number|null=null;
   constructor(private root:SVGGElement,private defs:SVGDefsElement,private metrics:()=>FontMetrics|null){}
   clear():void{this.root.replaceChildren();this.defs.replaceChildren();this.groups.clear();this.signatures.clear();this.images.clear();}
   setZoom(zoom:number):void{this.zoom=zoom;for(const group of this.groups.values())if(group.dataset.kind==='frame')this.frameHeader(group,Number(group.dataset.titleWidth??0));}
@@ -35,9 +35,11 @@ export class SceneRenderer {
     if(e.kind==='image'&&this.images.get(e.id)!==e.image){this.images.set(e.id,e.image);setAttrs(shape,{href:e.image??'',preserveAspectRatio:'xMidYMid meet'});}
     if(e.kind==='frame'){this.paintFrame(group,e,metrics);return;}
     // Layout runs in element-local space: moving a block keeps its text nodes.
-    const layout=layoutElement({...e,x:0,y:0},metrics),signature=JSON.stringify(layout);
+    const editing=this.editing===e.id,layout=layoutElement({...e,x:0,y:0},metrics),signature=editing?'editing':JSON.stringify(layout);
     if(this.signatures.get(e.id)===signature)return;this.signatures.set(e.id,signature);
     group.querySelectorAll(':scope > g,:scope > clipPath').forEach(n=>n.remove());
+    // The inline editor draws this text while it is open.
+    if(editing)return;
     const clip=svgElement('clipPath',{id:`text-${e.id}`});clip.append(svgElement('rect',{...layout.bounds}));
     const rows=svgElement('g',{'clip-path':`url(#text-${e.id})`,'data-fit-height':layout.fitHeight,'data-text-overflow':String(layout.overflow),'pointer-events':'none'});
     rows.append(...[...layout.title,...layout.body].map(row=>textNode(row,e.kind==='rectangle'?'middle':'start')));group.append(clip,rows);

@@ -3,6 +3,7 @@ import {CLIPBOARD_TYPE,copySelection,parseClipboard,pasteSelection} from './clip
 import {command as shortcut,isTextTarget} from './keyboard';
 import { Comments } from './comments';
 import { InlineTextEditor } from './text-editor';
+import {draftOf,growHeight,textOperations,type TextDraft} from './text-model';
 import { installIcons } from './icons';
 import { api, ApiError } from './api';
 import { CanvasView, orderedFrames } from './canvas';
@@ -10,15 +11,19 @@ import { Interaction, type Tool } from './interaction';
 import { showBoards, showProperties } from './panels';
 import { SlideList } from './slides';
 import { Presentation } from './presentation';
-import type { Board, BoardEvent, BoardSummary, CommentOperation, Operation,Actor,EditState } from './types';
+import type { Board, BoardEvent, BoardSummary, CommentOperation, Operation,Actor,EditState,Element as BoardElement } from './types';
 function browserActor():Actor {let id:string=crypto.randomUUID();try{const saved=localStorage.getItem('wireboard:actorId');if(saved&&saved.length<=128)id=saved;else localStorage.setItem('wireboard:actorId',id);}catch{}return {id,source:'user'};}
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+const DELETED_TEXT='Объект удалён другим клиентом, текст не сохранён.';
 export class Editor {
   board: Board | null = null; boards: BoardSummary[] = []; view = new CanvasView(); busy = false; online = false; private loading = 0; private opening = false; private queued = false; private toastTimer = 0;
   private actor=browserActor();private queue:CommandQueue|null=null;private refreshing=false;private queueError:unknown=null;
   private selectionEpoch=0;private pasteCount=0;private pasteIdentity='';
-  private draft: { id: number; revision: number; board: string; base:EditState } | null = null;
-  textEditor = new InlineTextEditor();
+  // height is the block height when editing began: the block grows from it and never below it.
+  private draft: { id: number; board: string; base:EditState; height:number } | null = null;
+  // A saved text edit stays here until confirmed, so a conflict can reopen it with the user's words.
+  private textSave: { commandId:string; id:number; board:string; draft:TextDraft } | null = null;private textConflict=false;
+  textEditor = new InlineTextEditor({input:draft=>this.textInput(draft),commit:()=>this.commitText()});
   slides = new SlideList(el('slides'), el('slide-count'), id => { this.select([id]); this.view.fit(id); });private panelKey='';
   comments = new Comments(this.view, {current:()=>this.board,commit:(board,ops,revision)=>this.commitComments(board,ops,revision),report:error=>this.report(error),confirm:async()=>{if(this.queue?.mode==='uncertain')await this.queue.retry();else if(this.queue?.mode==='conflict')this.discard();},anchorMode:()=>this.interaction.setTool('comment')});
   interaction = new Interaction(this.view, { current: () => this.board, editState:()=>this.queue!.projectedState(), busy: () => this.opening || !!this.draft, apply: (ops, revision, base) => this.apply(ops, revision, base), create:(element,base)=>this.createObjects([{op:'create',element}],[base.board.nextId],base,'Создание объекта'),select: ids => this.select(ids), edit: id => this.editText(id), comment: (anchor, point) => this.comments.place(anchor, point), tool: tool => this.tool(tool), changed: () => { if (this.queued) void this.refresh(); }, report: error => this.report(error) });
@@ -26,7 +31,7 @@ export class Editor {
   constructor() {
     this.view.onCamera = () => { el('zoom-value').textContent = `${Math.round(this.view.camera.zoom * 100)}%`; this.scheduleSaveView(); };
     this.view.onPins=()=>this.comments.renderPins();
-    this.view.onChrome=()=>{if(this.draft){const e=this.board?.elements.find(e=>e.id===this.draft?.id);if(e)this.textEditor.position(e,this.view);}};
+    this.view.onChrome=()=>this.positionText();
     addEventListener('pagehide',()=>this.saveView());
     installIcons(); this.bind(); try{document.querySelector('.workspace')!.classList.toggle('sidebar-hidden',innerWidth<900||localStorage.getItem('wireboard:library-sidebar')==='closed');}catch{}
   }
@@ -115,14 +120,14 @@ export class Editor {
   }
   private syncQueue() {
     const queue=this.queue;if(!queue)return;
-    this.board=queue.projected();this.view.project(this.board);if(this.panelState()!==this.panelKey)this.panels();
+    this.board=queue.projected();this.view.project(this.board);if(this.panelState()!==this.panelKey)this.panels();this.followText();
     const history=queue.summary;
     for(const [id,action,verb]of [['undo',history.undo,'Отменить'],['redo',history.redo,'Повторить']]as const){const button=el<HTMLButtonElement>(id);button.disabled=!action;button.title=action?`${verb}: ${action.label}`:`${verb}: история пуста`;button.setAttribute('aria-description',button.title);}
     const problem=queue.mode==='uncertain'||queue.mode==='conflict';el('operation-return').hidden=!problem;
     if(problem){
       const uncertain=queue.mode==='uncertain';el('operation-message').textContent=uncertain?'Ответ на сохранение не подтверждён. Проверим, было ли действие сохранено; повтор не выполнит его дважды.':queue.error instanceof Error?queue.error.message:'Свойства объекта изменились. Просмотрите изменения или отмените несохранённое действие.';
       el('operation-retry').textContent=uncertain?'Повторить сохранение':'Посмотреть изменения';el<HTMLButtonElement>('operation-discard').disabled=uncertain;
-      if(this.queueError!==queue.error){this.queueError=queue.error;if(queue.error)this.report(queue.error);if(!this.comments.isSending&&(!this.draft||uncertain))el<HTMLDialogElement>('operation-dialog').showModal();}
+      if(this.queueError!==queue.error){this.queueError=queue.error;if(queue.error)this.report(queue.error);if(!this.comments.isSending&&(uncertain||!this.draft&&!this.ownTextConflict()))el<HTMLDialogElement>('operation-dialog').showModal();}
     }else{this.queueError=null;const dialog=el<HTMLDialogElement>('operation-dialog');if(dialog.open)dialog.close();this.status(queue.hasPending?'Сохраняем…':'Все изменения сохранены');}
   }
   private boardsTimer=0;
@@ -145,31 +150,58 @@ export class Editor {
       if(this.board?.id!==id||this.opening||this.interaction.active){this.queued=true;return;}
       if(state.board.revision<(this.queue?.confirmed.board.revision??0)){this.queued=true;return;}
       this.view.setBoard(state.board);this.queue?.accept(state);
-      if(this.draft){this.status('Доска изменилась · ваш черновик сохранён');el('draft-message').textContent='Другой клиент изменил доску. Ваш текст остался в черновике.';}
+      if(this.draft)this.status('Доска изменилась · ваш черновик сохранён');
     }catch(error){this.report(error);}finally{this.refreshing=false;if(this.queued&&!this.interaction.active&&!this.opening)window.setTimeout(()=>{void this.refresh();},25);}
   }
-  private editText(id: number) { if (!this.board || !this.queue || this.opening) return; if(this.draft){if(this.draft.id!==id)this.report(new Error('Сначала сохраните или отмените текущий текст.'));el<HTMLTextAreaElement>('text-draft').focus();return;} const e = this.board.elements.find(e => e.id === id); if (!e) return; this.draft = { id, revision: this.board.revision, board: this.board.id,base:structuredClone(this.queue.projectedState()) }; el<HTMLTextAreaElement>('text-draft').value = e.text; el('draft-message').textContent = ''; el('draft-retry').hidden = true; el('draft-save').hidden = false; this.textEditor.show(e,this.view); }
+  private editText(id:number,selectAll=false) {
+    if(!this.board||!this.queue||this.opening)return;
+    if(this.draft){if(this.draft.id===id||this.textConflict){this.textEditor.focus();return;}this.commitText();}
+    const e=this.board.elements.find(e=>e.id===id);if(!e)return;
+    this.draft={id,board:this.board.id,base:this.queue.projectedState(),height:e.height};this.openText(e,draftOf(e),selectAll);
+  }
+  private openText(e:BoardElement,draft:TextDraft,selectAll=false) {this.view.setEditing(e.id);this.textEditor.show(e,draft,selectAll);this.positionText();}
+  private positionText() {
+    if(!this.draft)return;const box=this.view.textBox(this.draft.id);if(!box)return;const camera=this.view.camera;this.textEditor.position(box,camera);
+    if(this.textConflict){const bar=el('text-conflict');bar.style.left=`${camera.x+box.x*camera.zoom}px`;bar.style.top=`${camera.y+(box.y+box.height)*camera.zoom+8}px`;}
+  }
+  private followText() {
+    if(!this.draft||!this.board)return;
+    if(!this.board.elements.some(e=>e.id===this.draft!.id)){this.closeText();this.report(new Error(DELETED_TEXT));return;}
+    this.view.frames.invalidate('chrome');
+  }
+  private textInput(values:TextDraft) {
+    const d=this.draft,e=d&&this.board?.elements.find(e=>e.id===d.id);if(!d||!e||!this.view.metrics)return;
+    const height=growHeight({...e,height:d.height},values,this.view.metrics);this.view.previewTextHeight(height===e.height?null:height);
+  }
+  private commitText() {const d=this.draft;if(!d||this.textConflict)return;const values=this.textEditor.read();this.closeText();this.saveText(d,values);}
+  private saveText(d:{id:number;board:string;base:EditState},values:TextDraft) {
+    const e=d.base.board.elements.find(e=>e.id===d.id);if(!e||!this.queue||!this.view.metrics||this.board?.id!==d.board)return;
+    const operations=textOperations(e,values,growHeight(e,values,this.view.metrics));if(!operations.length)return;
+    const save={commandId:crypto.randomUUID(),id:d.id,board:d.board,draft:values};this.textSave=save;
+    this.queue.enqueue({label:'Изменение текста',operations,guards:makeGuards(d.base,operations)},()=>{if(this.textSave===save)this.textSave=null;},save.commandId)
+      .catch(()=>{if(this.textSave!==save)return;if(this.ownTextConflict())this.showTextConflict();else this.textSave=null;});
+  }
+  private closeText() {this.draft=null;this.textConflict=false;el('text-conflict').hidden=true;this.textEditor.close();this.view.setEditing(null);}
+  private ownTextConflict() {return !!this.textSave&&this.queue?.mode==='conflict'&&this.queue.inFlightId===this.textSave.commandId;}
+  // The queue stops on the conflicted command; only the bar's buttons resolve it.
+  private showTextConflict() {
+    const save=this.textSave!,e=this.board?.elements.find(e=>e.id===save.id);
+    if(!e||this.board?.id!==save.board){this.textSave=null;this.discard();this.report(new Error(DELETED_TEXT));return;}
+    let values=save.draft;if(this.draft?.id===save.id){values=this.textEditor.read();this.closeText();}else if(this.draft)this.commitText();
+    this.draft={id:e.id,board:save.board,base:this.queue!.projectedState(),height:e.height};this.textConflict=true;el('text-conflict').hidden=false;this.openText(e,values);
+  }
+  private async replaceText() {
+    const save=this.textSave;if(!save||!this.queue||this.busy)return;this.busy=true;
+    try{
+      if(this.ownTextConflict())this.discard();this.queue.accept(await api.editState(save.board,this.actor.id));
+      const values=this.textEditor.read(),e=this.board?.elements.find(e=>e.id===save.id);this.textSave=null;this.closeText();
+      if(!e){this.report(new Error(DELETED_TEXT));return;}
+      this.saveText({id:e.id,board:save.board,base:this.queue.projectedState()},values);
+    }catch(error){this.report(error);}finally{this.busy=false;if(this.queued)void this.refresh();}
+  }
+  private cancelText() {if(!this.textSave)return;if(this.ownTextConflict())this.discard();this.textSave=null;this.closeText();}
   // discard and a conflict's remote view change the projection without a new revision or selection
   private discard() { this.panelKey='';this.queue?.discard(); }
-  private async saveText(retry:boolean) {
-    if(!this.draft||!this.queue||this.busy)return;const draft=this.draft;this.busy=true;
-    const operations:Operation[]=[{op:'update',id:draft.id,patch:{text:el<HTMLTextAreaElement>('text-draft').value,title:el<HTMLInputElement>('title-draft').value}}];
-    try {
-      if(retry){if(this.queue.mode==='uncertain'){await this.queue.retry();return;}this.discard();this.queue.accept(await api.editState(draft.board,this.actor.id));}
-      const base=retry?this.queue.projectedState():draft.base;
-      await this.queue.enqueue({label:'Изменение текста',operations,guards:makeGuards(base,operations)},commandId=>{
-        if(this.draft!==draft)return;
-        const submitted=operations[0];if(submitted.op!=='update')return;
-        if(el<HTMLTextAreaElement>('text-draft').value===submitted.patch.text&&el<HTMLInputElement>('title-draft').value===submitted.patch.title){this.draft=null;this.textEditor.close();}
-        else{
-          const e=draft.base.board.elements.find(e=>e.id===draft.id)!;
-          for(const field of ['text','title']as const)if(e[field]!==submitted.patch[field]){e[field]=submitted.patch[field]!;const key={entity:{type:'element' as const,id:e.id},field};const entry=draft.base.stamps.find(s=>s.key.entity.type==='element'&&s.key.entity.id===e.id&&s.key.field===field);if(entry)entry.stamp=commandId;else draft.base.stamps.push({key,stamp:commandId});}
-          el('draft-message').textContent='Отправленная версия сохранена. Новые изменения остаются в черновике.';el('draft-retry').hidden=true;el('draft-save').hidden=false;
-        }
-      });
-    }catch(error){this.report(error);if(this.draft!==draft)return;el('draft-message').textContent='Текст изменился в другом клиенте. Ваш черновик сохранён; повтор подтвердит замену текста свежей версии.';el('draft-retry').hidden=false;el('draft-save').hidden=true;}
-    finally{this.busy=false;if(this.queued)void this.refresh();}
-  }
   private async commitComments(boardId:string,operations:CommentOperation[],_revision:number):Promise<Board> {
     if(!this.queue||this.board?.id!==boardId||this.opening)throw new Error('Доска сменилась. Вернитесь к исходному обсуждению.');
     if(_revision>this.queue.confirmed.board.revision)this.queue.accept(await api.editState(boardId,this.actor.id));
@@ -189,7 +221,8 @@ export class Editor {
   private async image(file: File) { if (!this.board) return; if (file.size > 8 * 1024 * 1024 || !['image/png','image/jpeg','image/webp'].includes(file.type)) { this.report(new Error('Выберите PNG/JPEG/WebP до 8 MiB.')); return; } try { const data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file); }); const bitmap = await createImageBitmap(file); const width = Math.min(400, Math.max(20, bitmap.width)), height = Math.min(10000, Math.max(20, width * bitmap.height / bitmap.width)); bitmap.close(); const rect = this.view.svg.getBoundingClientRect(); const point = this.view.worldPoint(rect.x + rect.width / 2, rect.y + rect.height / 2); await this.apply([{ op: 'create', element: { kind: 'image', x: point.x - width / 2, y: point.y - height / 2, width, height, image: data } }]); } catch (error) { this.report(error); } }
   private async download(format: 'json' | 'svg' | 'png') { if (!this.board) return; try { const frame = el<HTMLInputElement>('export-frame').checked ? this.board.elements.find(e => this.view.selected.includes(e.id) && e.kind === 'frame')?.id : undefined; if (el<HTMLInputElement>('export-frame').checked && frame === undefined) throw new Error('Сначала выберите слайд.'); const blob = format === 'json' ? new Blob([JSON.stringify(await api.getBoard(this.board.id), null, 2)], { type: 'application/json' }) : await api.download(this.board.id, format, frame); const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = `wireboard-${this.board.id}.${format}`; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); } catch (error) { this.report(error); } }
   private bind() {
-    document.addEventListener('pointerdown',()=>this.interaction.finishNudge(),true);
+    document.addEventListener('pointerdown',event=>{this.interaction.finishNudge();if(this.draft&&!this.textEditor.contains(event.target)&&!el('text-conflict').contains(event.target as Node))this.commitText();},true);
+    this.textEditor.root.addEventListener('focusout',event=>{const next=event.relatedTarget;if(next instanceof Node&&!this.textEditor.contains(next)&&!el('text-conflict').contains(next))this.commitText();});el('text-replace').onclick=()=>{void this.replaceText();};el('text-discard').onclick=()=>this.cancelText();
     document.addEventListener('focusin',event=>{if(isTextTarget(event.target))this.interaction.finishNudge();if(event.target!==this.view.svg&&this.interaction.gesture?.type==='connector-end')this.interaction.cancel();});
     el('context-edit').onclick=()=>{if(this.view.selected.length===1)this.editText(this.view.selected[0]);};
     el('context-comment').onclick=()=>{const e=this.board?.elements.find(e=>e.id===this.view.selected[0]);if(e)this.comments.place(e.kind==='connector'?{type:'connector',elementId:e.id,t:.5}:{type:'element',elementId:e.id,u:1,v:0});};
@@ -209,9 +242,7 @@ export class Editor {
     el('operation-discard').onclick=()=>this.discard();
     el('operation-return').onclick=()=>el<HTMLDialogElement>('operation-dialog').showModal();
     el<HTMLDialogElement>('operation-dialog').addEventListener('cancel',event=>{if(this.queue?.mode==='uncertain')event.preventDefault();else this.discard();});
-    el('text-form').onsubmit = event => { event.preventDefault(); void this.saveText(false); }; el('draft-retry').onclick = () => { void this.saveText(true); };
     document.querySelectorAll<HTMLButtonElement>('[data-close]').forEach(button => button.onclick = () => button.closest('dialog')!.close());
-    el('draft-cancel').onclick=()=>{this.draft=null;this.textEditor.close();}; el('text-form').addEventListener('keydown',event=>{if(event.key==='Escape'){event.stopPropagation();this.draft=null;this.textEditor.close();}if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();void this.saveText(!el('draft-retry').hidden);}});
     el('undo').onclick = () => { void this.history('undo'); }; el('redo').onclick = () => { void this.history('redo'); };
     el('zoom-in').onclick = () => this.view.animateZoom(1.2); el('zoom-out').onclick = () => this.view.animateZoom(1 / 1.2); el('zoom-value').onclick = el('fit').onclick = () => this.view.fit();
     el('toggle-sidebar').onclick = () => { const workspace=document.querySelector('.workspace')!; const shown=innerWidth<900?workspace.classList.contains('sidebar-mobile-open')&&!workspace.classList.contains('sidebar-hidden'):!workspace.classList.contains('sidebar-hidden');workspace.classList.toggle('sidebar-hidden',shown);workspace.classList.toggle('sidebar-mobile-open',innerWidth<900&&!shown); if(innerWidth<900 && !workspace.classList.contains('sidebar-hidden'))this.comments.close();try{localStorage.setItem('wireboard:library-sidebar',workspace.classList.contains('sidebar-hidden')?'closed':'open');}catch{} };
@@ -227,7 +258,7 @@ export class Editor {
   private key(event: KeyboardEvent) {
     if (this.presentation.key(event)) return;
     if (isTextTarget(document.activeElement)||event.isComposing || document.querySelector('dialog[open]')) return;
-    if (event.key === 'Escape') { this.interaction.finishNudge(true);this.comments.cancelAnchor();this.interaction.setTool('select'); if(this.draft){this.draft=null;this.textEditor.close();return;} this.interaction.cancel(); this.select([]); return; }
+    if (event.key === 'Escape') { this.interaction.finishNudge(true);this.comments.cancelAnchor();this.interaction.setTool('select'); if(this.draft){this.commitText();return;} this.interaction.cancel(); this.select([]); return; }
     if(this.board&&this.queue&&this.interaction.nudgeKey(event)){event.preventDefault();return;}
     if(!/^(Shift|Control|Meta|Alt)/.test(event.code))this.interaction.finishNudge();
     const resolved=shortcut(event);const command=event.ctrlKey||event.metaKey;

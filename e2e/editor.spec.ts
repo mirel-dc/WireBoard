@@ -32,7 +32,7 @@ test('editor commits blocks, connector, text, movement and history to real Rust'
   await expect.poll(async () => (await board(page, id)).elements.length).toBe(3);
   await page.getByRole('button', { name: 'Выделение (V)', exact: true }).click();
   await page.locator('[data-id="1"]').first().dblclick(); await page.getByLabel('Текст объекта').fill('Кириллица и <script>');
-  await page.getByRole('button', { name: 'Сохранить текст', exact: true }).click();
+  await page.getByLabel('Текст объекта').press('Escape');
   await expect.poll(async () => (await board(page, id)).elements[0].text).toBe('Кириллица и <script>');
   await expect(page.locator('#status')).toHaveText('Все изменения сохранены');
   await expect(page.locator('#scene [data-id="1"]')).toBeVisible();
@@ -59,9 +59,9 @@ test('CLI updates through SSE and remote edit preserves text draft', async ({ pa
   await exec(exe, ['--data-dir', dataDir, 'apply', id!, '--revision', '1', '--file', ops]);
   await expect(page.locator('#status')).toContainText('черновик');
   await expect(page.getByLabel('Текст объекта')).toHaveValue('Мой черновик');
-  await page.getByRole('button', { name: 'Сохранить текст', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Повторить на свежей версии', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Повторить на свежей версии', exact: true }).click();
+  await page.getByLabel('Текст объекта').press('Escape');
+  await expect(page.locator('#text-conflict')).toBeVisible();
+  await page.getByRole('button', { name: 'Заменить', exact: true }).click();
   await expect.poll(async () => (await board(page, id)).elements[0].text).toBe('Мой черновик');
 });
 
