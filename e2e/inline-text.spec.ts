@@ -170,3 +170,23 @@ test('keys_after_a_canvas_click_during_a_conflict_keep_the_block',async({page})=
   await page.locator('#canvas').click({position:{x:700,y:420}});await page.keyboard.press('KeyT');
   await expect(page.locator('button[data-tool="select"]')).toHaveAttribute('aria-pressed','true');expect(await fieldFocused(page)).toBe(true);await expect(page.locator('#text-draft')).toHaveValue('Мой текст');
 });
+async function conflictOnTheFirstSave(page:Page){
+  const id=await setup(page);await apply(page,id,1,[{op:'create',element:{kind:'rectangle',x:420,y:100,text:'Second'}}]);await expect(page.locator('#scene [data-id="2"]')).toBeVisible();
+  const release=await holdFirstApply(page,id);
+  await open(page);await page.locator('#text-draft').fill('Первый');await page.keyboard.press('Escape');await expect(editor(page)).toBeHidden();
+  await open(page,2);await page.locator('#text-draft').fill('Второй');
+  await apply(page,id,2,[{op:'update',id:1,patch:{text:'Агент'}}]);await expect(page.locator('#status')).toContainText('черновик');
+  release();await expect(page.locator('#text-conflict')).toBeVisible();await expect(page.locator('#text-draft')).toHaveValue('Первый');
+  const e=await bounding(editor(page)),m=await modelBox(page,1);expect(Math.abs(e.x-m.x)+Math.abs(e.y-m.y)).toBeLessThanOrEqual(3);
+  return id;
+}
+test('a_conflict_on_an_earlier_save_is_replaced_on_its_own_block',async({page})=>{
+  const id=await conflictOnTheFirstSave(page);await page.locator('#text-replace').click();
+  await expect.poll(()=>texts(page,id)).toEqual([[1,'Первый'],[2,'Второй']]);
+  await expect(page.locator('#text-conflict')).toBeHidden();await expect(page.locator('#operation-return')).toBeHidden();
+});
+test('cancelling_a_conflict_on_an_earlier_save_unblocks_the_queue',async({page})=>{
+  const id=await conflictOnTheFirstSave(page);await page.locator('#text-discard').click();
+  await expect.poll(()=>texts(page,id)).toEqual([[1,'Агент'],[2,'Второй']]);
+  await expect(page.locator('#text-conflict')).toBeHidden();await expect(page.locator('#operation-return')).toBeHidden();await expect(page.locator('#status')).toHaveText('Все изменения сохранены');
+});

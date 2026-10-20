@@ -15,14 +15,15 @@ import type { Board, BoardEvent, BoardSummary, CommentOperation, Operation,Actor
 function browserActor():Actor {let id:string=crypto.randomUUID();try{const saved=localStorage.getItem('wireboard:actorId');if(saved&&saved.length<=128)id=saved;else localStorage.setItem('wireboard:actorId',id);}catch{}return {id,source:'user'};}
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const DELETED_TEXT='Объект удалён другим клиентом, текст не сохранён.';
+interface TextSave{commandId:string;id:number;board:string;draft:TextDraft}
 export class Editor {
   board: Board | null = null; boards: BoardSummary[] = []; view = new CanvasView(); busy = false; online = false; private loading = 0; private opening = false; private queued = false; private toastTimer = 0;
   private actor=browserActor();private queue:CommandQueue|null=null;private refreshing=false;private queueError:unknown=null;
   private selectionEpoch=0;private pasteCount=0;private pasteIdentity='';
   // height is the block height when editing began: the block grows from it and never below it.
   private draft: { id: number; board: string; base:EditState; height:number } | null = null;
-  // A saved text edit stays here until confirmed, so a conflict can reopen it with the user's words.
-  private textSave: { commandId:string; id:number; board:string; draft:TextDraft } | null = null;private textConflict=false;
+  // Saved text edits stay here by command id until confirmed, so a conflict can reopen the block with the user's words.
+  private textSaves=new Map<string,TextSave>();private textConflict:TextSave|null=null;
   textEditor = new InlineTextEditor({input:draft=>this.textInput(draft),commit:()=>this.commitText()});
   slides = new SlideList(el('slides'), el('slide-count'), id => { this.select([id]); this.view.fit(id); });private panelKey='';
   comments = new Comments(this.view, {current:()=>this.board,commit:(board,ops,revision)=>this.commitComments(board,ops,revision),report:error=>this.report(error),confirm:async()=>{if(this.queue?.mode==='uncertain')await this.queue.retry();else if(this.queue?.mode==='conflict')this.discard();},anchorMode:()=>this.interaction.setTool('comment')});
@@ -171,7 +172,7 @@ export class Editor {
   }
   private followText() {
     if(!this.draft||!this.board)return;
-    if(!this.board.elements.some(e=>e.id===this.draft!.id)){if(this.textConflict){if(this.ownTextConflict())this.discard();this.textSave=null;}this.closeText();this.report(new Error(DELETED_TEXT));return;}
+    if(!this.board.elements.some(e=>e.id===this.draft!.id)){if(this.textConflict)this.dropConflict(this.textConflict);this.closeText();this.report(new Error(DELETED_TEXT));return;}
     this.view.frames.invalidate('chrome');
   }
   private textInput(values:TextDraft) {
@@ -182,29 +183,33 @@ export class Editor {
   private saveText(d:{id:number;board:string;base:EditState},values:TextDraft) {
     const e=d.base.board.elements.find(e=>e.id===d.id);if(!e||!this.queue||!this.view.metrics||this.board?.id!==d.board)return;
     const operations=textOperations(e,values,growHeight(e,values,this.view.metrics));if(!operations.length)return;
-    const save={commandId:crypto.randomUUID(),id:d.id,board:d.board,draft:values};this.textSave=save;
-    this.queue.enqueue({label:'Изменение текста',operations,guards:makeGuards(d.base,operations)},()=>{if(this.textSave===save)this.textSave=null;},save.commandId)
-      .catch(()=>{if(this.textSave!==save)return;if(this.ownTextConflict())this.showTextConflict();else this.textSave=null;});
+    const save:TextSave={commandId:crypto.randomUUID(),id:d.id,board:d.board,draft:values};this.textSaves.set(save.commandId,save);
+    this.queue.enqueue({label:'Изменение текста',operations,guards:makeGuards(d.base,operations)},()=>this.textSaves.delete(save.commandId),save.commandId)
+      .catch(()=>{if(!this.textSaves.has(save.commandId))return;if(this.conflictedSave()===save)this.showTextConflict(save);else this.textSaves.delete(save.commandId);});
   }
-  private closeText() {this.draft=null;this.textConflict=false;el('text-conflict').hidden=true;this.textEditor.close();this.view.setEditing(null);}
-  private ownTextConflict() {return !!this.textSave&&this.queue?.mode==='conflict'&&this.queue.inFlightId===this.textSave.commandId;}
-  // The queue stops on the conflicted command; only the bar's buttons resolve it.
-  private showTextConflict() {
-    const save=this.textSave!,e=this.board?.elements.find(e=>e.id===save.id);
-    if(!e||this.board?.id!==save.board){this.textSave=null;this.discard();this.report(new Error(DELETED_TEXT));return;}
+  private closeText() {this.draft=null;this.textConflict=null;el('text-conflict').hidden=true;this.textEditor.close();this.view.setEditing(null);}
+  // The queue stops on its head: only the save at the head is in conflict, whichever save was made last.
+  private conflictedSave() {const queue=this.queue;return queue?.mode==='conflict'&&queue.inFlightId?this.textSaves.get(queue.inFlightId)??null:null;}
+  private ownTextConflict() {return !!this.conflictedSave();}
+  // Only the bar's buttons resolve the conflict; another open draft is saved behind it.
+  private showTextConflict(save:TextSave) {
+    const e=this.board?.elements.find(e=>e.id===save.id);
+    if(!e||this.board?.id!==save.board){this.dropConflict(save);this.report(new Error(DELETED_TEXT));return;}
     let values=save.draft;if(this.draft?.id===save.id){values=this.textEditor.read();this.closeText();}else if(this.draft)this.commitText();
-    this.draft={id:e.id,board:save.board,base:this.queue!.projectedState(),height:e.height};this.textConflict=true;el('text-conflict').hidden=false;this.openText(e,values);
+    this.draft={id:e.id,board:save.board,base:this.queue!.projectedState(),height:e.height};this.textConflict=save;el('text-conflict').hidden=false;this.openText(e,values);
   }
+  // Takes the save off the queue head if it is still there, so the commands queued after it go on.
+  private dropConflict(save:TextSave) {const own=this.conflictedSave()===save;this.textSaves.delete(save.commandId);if(own)this.discard();}
   private async replaceText() {
-    const save=this.textSave;if(!save||!this.queue||this.busy)return;this.busy=true;
+    const save=this.textConflict;if(!save||!this.queue||this.busy)return;this.busy=true;
     try{
-      if(this.ownTextConflict())this.discard();this.queue.accept(await api.editState(save.board,this.actor.id));
-      const values=this.textEditor.read(),e=this.board?.elements.find(e=>e.id===save.id);this.textSave=null;this.closeText();
+      this.dropConflict(save);this.queue.accept(await api.editState(save.board,this.actor.id));
+      const values=this.textEditor.read(),e=this.board?.elements.find(e=>e.id===save.id);this.closeText();
       if(!e){this.report(new Error(DELETED_TEXT));return;}
       this.saveText({id:e.id,board:save.board,base:this.queue.projectedState()},values);
     }catch(error){this.report(error);}finally{this.busy=false;if(this.queued)void this.refresh();}
   }
-  private cancelText() {if(!this.textSave)return;if(this.ownTextConflict())this.discard();this.textSave=null;this.closeText();}
+  private cancelText() {const save=this.textConflict;if(!save)return;this.dropConflict(save);this.closeText();}
   // discard and a conflict's remote view change the projection without a new revision or selection
   private discard() { this.panelKey='';this.queue?.discard(); }
   private async commitComments(boardId:string,operations:CommentOperation[],_revision:number):Promise<Board> {
