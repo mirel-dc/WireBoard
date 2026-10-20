@@ -132,7 +132,8 @@ p { line-height: 1.55; overflow-wrap: anywhere; }
 .comment-pin.orphaned::before { border: 2px dashed var(--paper); }
 .pin-leader { position: absolute; border-block-start: 1px solid var(--accent); }
 #canvas { user-select: none; -webkit-user-select: none; }
-.text-editor { position: absolute; z-index: 4; inset-block-start: 0; inset-inline-start: 0; transform-origin: 0 0; display: flex; flex-direction: column; justify-content: flex-start; padding: 16px; overflow: hidden; font-family: 'Golos Text', sans-serif; font-kerning: none; font-variant-ligatures: none; color: #302b3b; outline: 2px solid var(--accent); border-radius: 5px; }
+/* contain: layout stops a typing relayout at the editor; otherwise it reaches the percent-sized SVG and re-lays out every scene element (~10 ms per key on 300 elements). */
+.text-editor { position: absolute; z-index: 4; inset-block-start: 0; inset-inline-start: 0; transform-origin: 0 0; display: flex; flex-direction: column; justify-content: flex-start; padding: 16px; overflow: hidden; font-family: 'Golos Text', sans-serif; font-kerning: none; font-variant-ligatures: none; color: #302b3b; outline: 2px solid var(--accent); border-radius: 5px; contain: layout; }
 .text-editor[data-kind='rectangle'] { justify-content: center; text-align: center; }
 .text-editor[data-kind='text'] { padding: 4px; }
 .text-editor[data-kind='frame'] { padding: 2px 0; color: #66786c; outline-offset: 2px; }
