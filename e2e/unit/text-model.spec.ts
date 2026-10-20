@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test';
-import {MAX_HEIGHT,draftOf,growHeight,joinTitle,pasteIntoTitle,splitTitle,textOperations} from '../../frontend/src/text-model';
+import {MAX_HEIGHT,TEXT_MAX,draftOf,growHeight,joinTitle,pasteIntoTitle,splitTitle,textOperations} from '../../frontend/src/text-model';
 import {element,metrics} from './fixtures';
 test('enter in the middle of the title moves the tail into the description',()=>{
   expect(splitTitle({title:'AB',text:'Card'},1,1)).toEqual({draft:{title:'A',text:'B\nCard'},caret:{field:'text',offset:0}});
@@ -8,6 +8,9 @@ test('enter in the middle of the title moves the tail into the description',()=>
 });
 test('enter at the end of the title only moves the caret',()=>{
   expect(splitTitle({title:'AB',text:'Card'},2,2)).toEqual({draft:{title:'AB',text:'Card'},caret:{field:'text',offset:0}});
+});
+test('a split never makes the description longer than its limit',()=>{
+  const text=splitTitle({title:'AB',text:'x'.repeat(TEXT_MAX)},1,1).draft.text;expect([text.length,text.slice(0,3)]).toEqual([TEXT_MAX,'B\nx']);
 });
 test('backspace at the start of the description joins its first line to the title',()=>{
   expect(joinTitle({title:'A',text:'B\nCard'})).toEqual({draft:{title:'AB',text:'Card'},caret:{field:'title',offset:1}});

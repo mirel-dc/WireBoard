@@ -3,6 +3,8 @@ import type {Camera} from './camera';
 import {joinTitle,pasteIntoTitle,splitTitle,type Edit,type TextDraft} from './text-model';
 export interface TextEditorCallbacks{input(draft:TextDraft):void;commit():void}
 const field=(id:string)=>document.getElementById(id) as HTMLTextAreaElement;
+// Safari sends the keydown that ends an IME composition with keyCode 229 and isComposing false.
+const composing=(event:KeyboardEvent)=>event.isComposing||event.keyCode===229;
 // Two textareas over the block; for a card they behave as one field whose first line is the title.
 export class InlineTextEditor {
   readonly root=document.getElementById('text-editor')!;
@@ -39,13 +41,13 @@ export class InlineTextEditor {
     if(!commit)return false;event.preventDefault();event.stopPropagation();this.callbacks.commit();return true;
   }
   private titleKey(event:KeyboardEvent){
-    if(event.isComposing||this.commitKey(event))return;
+    if(composing(event)||this.commitKey(event))return;
     const t=this.title,atEnd=t.selectionStart===t.value.length&&t.selectionEnd===t.value.length;
     if(event.key==='Enter'){event.preventDefault();this.apply(splitTitle(this.read(),t.selectionStart,t.selectionEnd));}
     else if(event.key==='ArrowDown'&&atEnd){event.preventDefault();this.apply({draft:this.read(),caret:{field:'text',offset:0}});}
   }
   private bodyKey(event:KeyboardEvent){
-    if(event.isComposing||this.commitKey(event)||this.title.hidden)return;
+    if(composing(event)||this.commitKey(event)||this.title.hidden)return;
     const b=this.body;if(b.selectionStart!==0||b.selectionEnd!==0)return;
     if(event.key==='Backspace'){event.preventDefault();const edit=joinTitle(this.read());if(edit)this.apply(edit);}
     else if(event.key==='ArrowUp'){event.preventDefault();this.apply({draft:this.read(),caret:{field:'title',offset:this.title.value.length}});}

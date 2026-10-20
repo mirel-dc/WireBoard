@@ -255,3 +255,10 @@ test('agent_move_while_typing_does_not_block_the_grown_save',async({page})=>{
   await expect(page.locator('#text-conflict')).toBeHidden();await expect(page.locator('#operation-return')).toBeHidden();
   await page.keyboard.press('Control+z');await expect.poll(async()=>{const e=(await board(page,id)).elements[0];return [e.x,e.text,e.height];}).toEqual([300,'Card',112]);
 });
+// Safari reports composition keydowns with keyCode 229 and isComposing false.
+async function composingKey(page:Page,field:string,key:string){await page.locator(field).evaluate((t,key)=>{const event=new KeyboardEvent('keydown',{key,code:key,bubbles:true,cancelable:true});Object.defineProperty(event,'keyCode',{get:()=>229});t.dispatchEvent(event);},key);}
+test('safari_composition_key_code_does_not_commit_or_split',async({page})=>{
+  const id=await setup(page);await open(page);await composingKey(page,'#text-draft','Escape');await expect(editor(page)).toBeVisible();
+  await page.locator('#title-draft').fill('AB');await page.locator('#title-draft').evaluate(t=>(t as HTMLTextAreaElement).setSelectionRange(1,1));await composingKey(page,'#title-draft','Enter');
+  await expect(page.locator('#title-draft')).toHaveValue('AB');await expect(page.locator('#text-draft')).toHaveValue('Card');expect((await board(page,id)).revision).toBe(1);
+});

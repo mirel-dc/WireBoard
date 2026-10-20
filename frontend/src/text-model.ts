@@ -11,7 +11,7 @@ const join=(head:string,text:string)=>text?`${head}\n${text}`:head;
 // Enter in the title: the tail after the caret becomes the first line of the description.
 export function splitTitle(d:TextDraft,start:number,end:number):Edit{
   const tail=d.title.slice(end);
-  return{draft:{title:d.title.slice(0,start),text:tail?join(tail,d.text):d.text},caret:{field:'text',offset:0}};
+  return{draft:{title:d.title.slice(0,start),text:(tail?join(tail,d.text):d.text).slice(0,TEXT_MAX)},caret:{field:'text',offset:0}};
 }
 // Backspace at the start of the description joins its first line to the title.
 export function joinTitle(d:TextDraft):Edit|null{
