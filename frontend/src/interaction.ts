@@ -1,6 +1,7 @@
 import {CanvasView,members} from './canvas';
 import {wheelIntent} from './navigation';
 import {isDiscreteZoom} from './camera';
+import {HANDLE_REACH} from './overlay';
 import {connectorTarget,type ConnectorEnd,type ConnectorTarget} from './anchors';
 import type {Anchor,Board,EditState,Element,Kind,Operation} from './types';
 export type Tool='select'|'hand'|'comment'|Kind;
@@ -60,7 +61,14 @@ export class Interaction {
     this.finishNudge();if(intent.type==='zoom'){if(isDiscreteZoom(e))view.animateZoom(intent.factor,e.clientX,e.clientY);else view.zoom(intent.factor,e.clientX,e.clientY);}else view.pan(intent.dx,intent.dy);
   }
   setTool(tool:Tool){if(this.gesture?.type==='connector-end')this.cancel();this.tool=tool;this.connectorFrom=null;this.view.svg.dataset.tool=tool;this.callbacks.tool(tool);}
-  private hover(event:PointerEvent){const target=this.tool==='select'&&!this.space?this.view.elementAt(event.target):undefined;this.view.setHover(target&&target.kind!=='connector'&&target.kind!=='frame'?target.id:null);}
+  private hover(event:PointerEvent){
+    if(this.tool!=='select'||this.space){this.view.setHover(null);return;}
+    const target=this.view.elementAt(event.target);if(target&&target.kind!=='connector'&&target.kind!=='frame'){this.view.setHover(target.id);return;}
+    // The handles sit outside the block: keep its hover while the pointer travels to them across empty space or a parent frame.
+    const current=this.view.hovered(),point=this.view.worldPoint(event.clientX,event.clientY),reach=HANDLE_REACH/this.view.camera.zoom;
+    if(current&&point.x>=current.x-reach&&point.x<=current.x+current.width+reach&&point.y>=current.y-reach&&point.y<=current.y+current.height+reach)return;
+    this.view.setHover(null);
+  }
   private begin(g:Gesture){this.gesture=g;this.view.svg.setPointerCapture(g.pointer);}
   private down(event:PointerEvent){
     this.finishNudge();this.view.setHover(null);

@@ -54,6 +54,14 @@ export class CanvasView {
   reveal(point:Point){this.zoomAnimation.stop();const rect=this.svg.getBoundingClientRect();this.camera={...this.camera,x:rect.width/2-point.x*this.camera.zoom,y:rect.height/2-point.y*this.camera.zoom};this.updateCamera();}
   setSelection(ids: number[]) { this.selected = ids.filter(id => this.board?.elements.some(e => e.id === id)); this.frames.invalidate('overlay'); }
   setHover(id:number|null){if(this.hover===id)return;this.hover=id;this.frames.invalidate('overlay');}
+  hovered():Element|null{const e=this.hover===null?null:this.board?.elements.find(e=>e.id===this.hover);return e?this.project(e):null;}
+  // The hovered block wins over a single selected one; any gesture, preview or open text editor hides the handles.
+  private connectSource():Element|null{
+    const board=this.board;if(!board||this.editing!==null||this.selected.length>1||this.preview||this.resizePreview||this.marqueeBounds||this.creation||this.connectorPreview)return null;
+    const usable=(e:Element|undefined)=>!!e&&['rectangle','text','image'].includes(e.kind);
+    const hover=this.hover===null?undefined:board.elements.find(e=>e.id===this.hover);if(usable(hover))return this.project(hover!);
+    const selected=this.selected.length===1?board.elements.find(e=>e.id===this.selected[0]):undefined;return usable(selected)?this.project(selected!):null;
+  }
   // The edited object hides its SVG text and selection; previewTextHeight survives clearPreview so a window blur keeps the grown block.
   setEditing(id:number|null){if(this.editing===id)return;const ids=[this.editing,id].filter((v):v is number=>v!==null);this.editing=id;this.editingHeight=null;this.renderer.editing=id;this.previewChanged(ids);}
   previewTextHeight(height:number|null){if(this.editing===null||this.editingHeight===height)return;this.editingHeight=height;this.previewChanged([this.editing]);this.frames.invalidate('chrome');}
@@ -107,7 +115,7 @@ export class CanvasView {
     let connectorTarget=null;const p=this.connectorPreview,target=p?.target?p.board.elements.find(n=>n.id===p.target!.id):undefined;
     if(p&&target){const points=this.linkPoints(p.board.elements.find(n=>n.id===p.id)!),port=p.end==='from'?points[0]:points.at(-1);if(port)connectorTarget={element:target,port};}
     const hover=find(this.hover),showHover=hover&&hover.id!==this.editing&&!this.selected.includes(hover.id)&&!this.preview&&!this.resizePreview;
-    this.overlay.render({selected,connectorEnds,hover:showHover?this.project(hover):null,marquee:this.marqueeBounds,drop:find(this.drop),create:this.creation,connectorTarget,zoom:this.camera.zoom});
+    this.overlay.render({selected,connectorEnds,hover:showHover?this.project(hover):null,marquee:this.marqueeBounds,drop:find(this.drop),create:this.creation,connectorTarget,connect:this.connectSource(),zoom:this.camera.zoom});
     // style.css matches [data-selected='true'].
     for(const group of this.scene.querySelectorAll(':scope > [data-kind="connector"]')){if(this.selected.includes(Number(group.getAttribute('data-id'))))group.setAttribute('data-selected','true');else group.removeAttribute('data-selected');}
   }
