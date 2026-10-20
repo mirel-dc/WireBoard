@@ -166,7 +166,7 @@ export class Editor {
   }
   private followText() {
     if(!this.draft||!this.board)return;
-    if(!this.board.elements.some(e=>e.id===this.draft!.id)){this.closeText();this.report(new Error(DELETED_TEXT));return;}
+    if(!this.board.elements.some(e=>e.id===this.draft!.id)){if(this.textConflict){if(this.ownTextConflict())this.discard();this.textSave=null;}this.closeText();this.report(new Error(DELETED_TEXT));return;}
     this.view.frames.invalidate('chrome');
   }
   private textInput(values:TextDraft) {

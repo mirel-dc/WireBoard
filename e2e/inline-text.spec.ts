@@ -96,3 +96,15 @@ test('editor_fields_line_up_with_the_layout',async({page})=>{
   await open(page);const field=await bounding(page.locator('#title-draft')),canvas=await bounding(page.locator('#canvas')),cam=await camera(page);
   expect(Math.abs(field.y-(canvas.y+cam.y+(title.y-title.size)*cam.zoom))).toBeLessThanOrEqual(2);
 });
+test('agent_deleting_the_block_during_a_conflict_clears_it',async({page})=>{
+  const id=await setup(page);await open(page);await page.locator('#text-draft').fill('Мой текст');
+  await apply(page,id,1,[{op:'update',id:1,patch:{text:'Агент'}}]);await expect(page.locator('#status')).toContainText('черновик');
+  await page.locator('#text-draft').press('Escape');await expect(page.locator('#text-conflict')).toBeVisible();
+  await apply(page,id,2,[{op:'delete',ids:[1]}]);
+  await expect(editor(page)).toBeHidden();await expect(page.locator('#text-conflict')).toBeHidden();await expect(page.locator('#toast')).toContainText('Объект удалён другим клиентом');
+  await expect(page.locator('#operation-return')).toBeHidden();
+  await apply(page,id,3,[{op:'create',element:{kind:'rectangle',x:420,y:100,text:'Next'}}]);
+  const next=(await board(page,id)).elements[0].id;await expect(page.locator(`#scene [data-id="${next}"]`)).toBeVisible();
+  await open(page,next);await page.locator('#text-draft').fill('Saved');await page.keyboard.press('Escape');
+  await expect.poll(async()=>(await board(page,id)).elements[0].text).toBe('Saved');
+});
