@@ -36,3 +36,43 @@ test('edge_resize_handle_still_wins_near_a_dot',async({page})=>{
   const b=await bounding(page.locator('[data-handle="e"]'));await page.mouse.move(b.x+b.width-2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width-2+40,b.y+b.height/2,{steps:4});await page.mouse.up();
   await expect.poll(async()=>(await board(page,id)).elements[0].width).toBeGreaterThan(220);expect((await board(page,id)).elements).toHaveLength(1);
 });
+async function clickPlus(page:Page,side:string,id=1){await hoverCard(page,id);const plus=page.locator(`[data-add="${id}"][data-side="${side}"]`);await expect(plus).toBeVisible();await plus.click();}
+test('plus_creates_a_linked_copy_in_each_direction',async({page})=>{
+  const id=await setup(page);await apply(page,id,1,[{op:'update',id:1,patch:{fill:'#fff0b8',stroke:'#ccad49'}}]);await expect.poll(async()=>(await board(page,id)).revision).toBe(2);
+  const expected:Record<string,[number,number]>={right:[400,100],left:[-200,100],top:[100,-92],bottom:[100,292]};let revision=2;
+  for(const [side,[x,y]]of Object.entries(expected)){
+    await clickPlus(page,side);await expect(page.locator('#text-editor')).toBeVisible();await page.keyboard.press('Escape');
+    revision++;await expect.poll(async()=>(await board(page,id)).revision).toBe(revision);
+    const b=await board(page,id),block=b.elements.at(-2),link=b.elements.at(-1);
+    expect([block.kind,block.x,block.y,block.width,block.height,block.fill,block.stroke,block.title,block.text]).toEqual(['rectangle',x,y,220,112,'#fff0b8','#ccad49','','']);
+    expect([link.kind,link.from,link.to,link.fromPort]).toEqual(['connector',1,block.id,side]);
+  }
+});
+test('plus_is_one_undo_step_and_opens_text_input',async({page})=>{
+  const id=await setup(page);await clickPlus(page,'right');await expect(page.locator('#title-draft')).toBeFocused();await page.keyboard.type('Оплата');await page.keyboard.press('Escape');
+  await expect.poll(async()=>(await board(page,id)).elements.find((e:{id:number})=>e.id===2)?.title).toBe('Оплата');
+  await page.keyboard.press('Control+z');await page.keyboard.press('Control+z');await expect.poll(async()=>(await board(page,id)).elements.length).toBe(1);
+});
+test('plus_skips_an_occupied_spot',async({page})=>{
+  const id=await setup(page);await apply(page,id,1,[{op:'create',element:{kind:'rectangle',x:400,y:100,text:'Busy'}}]);await expect(page.locator('#scene [data-id="2"]')).toBeVisible();
+  await clickPlus(page,'right');await page.keyboard.press('Escape');await expect.poll(async()=>(await board(page,id)).elements.length).toBe(4);
+  const block=(await board(page,id)).elements.find((e:{id:number})=>e.id===3);expect([block.x,block.y]).toEqual([644,100]);
+});
+test('clicking_a_dot_without_dragging_creates_nothing',async({page})=>{
+  const id=await setup(page);await hoverCard(page);await page.locator('[data-connect="1"][data-side="right"]').click();await page.waitForTimeout(200);
+  expect((await board(page,id)).revision).toBe(1);
+});
+test('plus_far_off_screen_moves_the_camera_to_show_the_block',async({page})=>{
+  await setup(page);const canvas=await bounding(page.locator('#canvas'));
+  const b=await box(page);await page.locator('#canvas').evaluate((e,dx)=>e.dispatchEvent(new WheelEvent('wheel',{deltaX:dx,bubbles:true,cancelable:true})),b.x-canvas.x-100);
+  await clickPlus(page,'left');await expect(page.locator('#text-editor')).toBeVisible();
+  const editor=await bounding(page.locator('#text-editor'));expect(editor.x).toBeGreaterThanOrEqual(canvas.x+39);
+});
+test('agent_change_during_plus_closes_the_new_block_editor',async({page})=>{
+  const id=await setup(page);let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});
+  await page.route(`**/api/boards/${id}/apply**`,async route=>{await held;await route.continue();},{times:1});
+  await clickPlus(page,'right');await expect(page.locator('#text-editor')).toBeVisible();
+  await apply(page,id,1,[{op:'create',element:{kind:'rectangle',x:900,y:500,text:'Agent'}}]);release();
+  await expect(page.locator('#text-editor')).toBeHidden();await expect(page.locator('#operation-dialog')).toBeVisible();
+  const agent=(await board(page,id)).elements.find((e:{text:string})=>e.text==='Agent');expect(agent).toBeTruthy();
+});

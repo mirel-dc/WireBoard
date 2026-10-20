@@ -52,6 +52,12 @@ export class CanvasView {
     const rect = this.svg.getBoundingClientRect(); const zoom = Math.min(1.25, Math.max(.1, Math.min((rect.width - 100) / (right - x), (rect.height - 160) / (bottom - y)))); this.camera = { x: (rect.width - (right - x) * zoom) / 2 - x * zoom, y: (rect.height - (bottom - y) * zoom) / 2 - y * zoom, zoom }; this.updateCamera();
   }
   reveal(point:Point){this.zoomAnimation.stop();const rect=this.svg.getBoundingClientRect();this.camera={...this.camera,x:rect.width/2-point.x*this.camera.zoom,y:rect.height/2-point.y*this.camera.zoom};this.updateCamera();}
+  // Shifts the camera by the least amount that brings b fully into view with a 40px margin.
+  revealBounds(b:Bounds){
+    const rect=this.svg.getBoundingClientRect(),z=this.camera.zoom,m=40,left=this.camera.x+b.x*z,top=this.camera.y+b.y*z,right=left+b.width*z,bottom=top+b.height*z;
+    let dx=0,dy=0;if(right>rect.width-m)dx=right-(rect.width-m);if(left-dx<m)dx=left-m;if(bottom>rect.height-m)dy=bottom-(rect.height-m);if(top-dy<m)dy=top-m;
+    if(dx||dy){this.zoomAnimation.stop();this.pan(dx,dy);}
+  }
   setSelection(ids: number[]) { this.selected = ids.filter(id => this.board?.elements.some(e => e.id === id)); this.frames.invalidate('overlay'); }
   setHover(id:number|null){if(this.hover===id)return;this.hover=id;this.frames.invalidate('overlay');}
   hovered():Element|null{const e=this.hover===null?null:this.board?.elements.find(e=>e.id===this.hover);return e?this.project(e):null;}

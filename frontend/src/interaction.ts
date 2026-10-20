@@ -2,6 +2,7 @@ import {CanvasView,members} from './canvas';
 import {wheelIntent} from './navigation';
 import {isDiscreteZoom} from './camera';
 import {HANDLE_REACH} from './overlay';
+import type {Side} from './placement';
 import {connectorTarget,type ConnectorEnd,type ConnectorTarget} from './anchors';
 import type {Anchor,Board,EditState,Element,Kind,Operation} from './types';
 export type Tool='select'|'hand'|'comment'|Kind;
@@ -9,8 +10,8 @@ export type ResizeHandle='n'|'ne'|'e'|'se'|'s'|'sw'|'w'|'nw';
 export interface Bounds{x:number;y:number;width:number;height:number}
 interface Point{x:number;y:number}
 interface Nudge{ids:number[];base:EditState;dx:number;dy:number;held:Set<string>}
-interface Callbacks{current():Board|null;editState():EditState;busy():boolean;apply(operations:Operation[],revision?:number,base?:EditState):Promise<boolean>;create(element:Partial<Element>&{kind:Kind},base:EditState):void;select(ids:number[]):void;edit(id:number):void;comment(anchor:Anchor,clientPoint:Point):void;tool(tool:Tool):void;changed():void;report(error:unknown):void}
-type Gesture=({type:'pan';x:number;y:number;cameraX:number;cameraY:number}|{type:'move';start:Point;ids:number[];preview:number[];board:Board;dx:number;dy:number;targets:Map<number,number|null>;base:EditState}|{type:'marquee';start:Point;end:Point;selected:number[]}|{type:'resize';start:Point;element:Element;handle:ResizeHandle;bounds:Bounds;base:EditState}|{type:'create';kind:Kind;start:Point;screen:Point;bounds:Bounds;dragged:boolean;base:EditState}|{type:'connector-end';id:number;end:ConnectorEnd;screen:Point;dragged:boolean;point:Point;target:ConnectorTarget|null;base:EditState;board:Board})&{pointer:number};
+interface Callbacks{current():Board|null;editState():EditState;busy():boolean;apply(operations:Operation[],revision?:number,base?:EditState):Promise<boolean>;create(element:Partial<Element>&{kind:Kind},base:EditState):void;select(ids:number[]):void;edit(id:number):void;comment(anchor:Anchor,clientPoint:Point):void;tool(tool:Tool):void;changed():void;addBeside(id:number,side:Side):void;report(error:unknown):void}
+type Gesture=({type:'pan';x:number;y:number;cameraX:number;cameraY:number}|{type:'move';start:Point;ids:number[];preview:number[];board:Board;dx:number;dy:number;targets:Map<number,number|null>;base:EditState}|{type:'marquee';start:Point;end:Point;selected:number[]}|{type:'resize';start:Point;element:Element;handle:ResizeHandle;bounds:Bounds;base:EditState}|{type:'create';kind:Kind;start:Point;screen:Point;bounds:Bounds;dragged:boolean;base:EditState}|{type:'connector-end';id:number;end:ConnectorEnd;screen:Point;dragged:boolean;point:Point;target:ConnectorTarget|null;base:EditState;board:Board}|{type:'connect';source:Element;side:Side;add:boolean;screen:Point;dragged:boolean;point:Point;target:ConnectorTarget|null;base:EditState})&{pointer:number};
 const clamp=(v:number,min:number,max:number)=>Math.min(max,Math.max(min,v));
 function defaultBounds(kind:Kind,center:Point):Bounds{const width=kind==='frame'?600:kind==='text'?320:220,height=kind==='frame'?360:kind==='text'?100:112;return{x:center.x-width/2,y:center.y-height/2,width,height};}
 export function resizeBounds(start:Bounds,handle:ResizeHandle,dx:number,dy:number,keepAspect:boolean):Bounds {
@@ -75,6 +76,12 @@ export class Interaction {
     const board=this.callbacks.current();if(!board||this.gesture)return;const point=this.view.worldPoint(event.clientX,event.clientY);let target=this.view.elementAt(event.target);this.downTarget=target?.id??null;this.doubleTap=this.downTarget!==null&&this.downTarget===this.previousTap?this.downTarget:null;this.view.svg.focus();
     if(this.tool==='hand'||this.space||event.button===1){this.view.stopZoom();this.begin({type:'pan',pointer:event.pointerId,x:event.clientX,y:event.clientY,cameraX:this.view.camera.x,cameraY:this.view.camera.y});event.preventDefault();return;}
     if(this.callbacks.busy()||event.button!==0)return;
+    const grip=(event.target as globalThis.Element).closest('[data-connect],[data-add]');
+    if(grip&&this.tool==='select'){
+      const base=this.callbacks.editState(),id=Number(grip.getAttribute('data-connect')??grip.getAttribute('data-add')),source=base.board.elements.find(e=>e.id===id);
+      if(source){this.begin({type:'connect',pointer:event.pointerId,source:structuredClone(source),side:grip.getAttribute('data-side') as Side,add:grip.hasAttribute('data-add'),screen:{x:event.clientX,y:event.clientY},dragged:false,point,target:null,base});event.preventDefault();}
+      return;
+    }
     const endpoint=(event.target as globalThis.Element).closest('[data-connector-end]');
     if(endpoint&&this.tool==='select'){
       const base=this.callbacks.editState(),id=Number(endpoint.getAttribute('data-connector-end')),end=endpoint.getAttribute('data-end') as ConnectorEnd,link=base.board.elements.find(e=>e.id===id);
@@ -99,6 +106,7 @@ export class Interaction {
       g.dragged ||= Math.hypot(event.clientX-g.screen.x,event.clientY-g.screen.y)>3;g.point=point;
       if(g.dragged){g.target=connectorTarget(g.board,g.board.elements.find(e=>e.id===g.id)!,g.end,point,this.view.camera.zoom);this.view.previewConnector(g.board,g.id,g.end,point,g.target);}
     }
+    else if(g.type==='connect'){g.dragged ||= Math.hypot(event.clientX-g.screen.x,event.clientY-g.screen.y)>4;g.point=point;}
     else if(g.type==='create'){
       g.dragged ||= Math.hypot(event.clientX-g.screen.x,event.clientY-g.screen.y)>3;
       if(g.dragged){const dx=point.x-g.start.x,dy=point.y-g.start.y,side=Math.max(Math.abs(dx),Math.abs(dy)),width=clamp(event.shiftKey?side:Math.abs(dx),20,10000),height=clamp(event.shiftKey?side:Math.abs(dy),20,10000);g.bounds={x:dx<0?g.start.x-width:g.start.x,y:dy<0?g.start.y-height:g.start.y,width,height};this.view.previewCreate(g.bounds,g.kind);}
@@ -108,6 +116,7 @@ export class Interaction {
   private up(event:PointerEvent){const g=this.gesture;if(!g){this.previousTap=this.downTarget;return;}if(g.pointer!==event.pointerId)return;this.move(event);this.previousTap=g.type==='move'&&Math.hypot(g.dx,g.dy)<=2/this.view.camera.zoom?this.downTarget:null;if(this.previousTap===null)this.doubleTap=null;this.gesture=null;this.view.clearPreview();this.view.highlightDrop(null);if(this.view.svg.hasPointerCapture(event.pointerId))this.view.svg.releasePointerCapture(event.pointerId);
     let ops:Operation[]=[];
     if(g.type==='connector-end'&&g.dragged&&g.target){const link=g.base.board.elements.find(e=>e.id===g.id)!;if(link[g.end]!==g.target.id||link[`${g.end}Port`]!==g.target.port)ops=[{op:'update',id:g.id,patch:{[g.end]:g.target.id,[`${g.end}Port`]:g.target.port}}];}
+    if(g.type==='connect'&&!g.dragged&&g.add)this.callbacks.addBeside(g.source.id,g.side);
     if(g.type==='create'){const kind=g.kind;this.callbacks.create({id:g.base.board.nextId,kind,...g.bounds,text:kind==='frame'?'Новый фрейм':'',title:'',fill:kind==='frame'?'#ffffff':'#eee5f8',stroke:'#ae91c5',fontSize:16},g.base);this.setTool('select');}
     if(g.type==='move'&&Math.hypot(g.dx,g.dy)>2/this.view.camera.zoom)ops=moveOperations(g.board,g.ids,g.dx,g.dy);
     else if(g.type==='resize'){const e=g.element,b=g.bounds;if(b.x!==e.x||b.y!==e.y||b.width!==e.width||b.height!==e.height)ops=[{op:'update',id:e.id,patch:{x:b.x,y:b.y}},{op:'resize',id:e.id,width:b.width,height:b.height}];}

@@ -7,11 +7,12 @@ import {MIN_EDIT_ZOOM,draftOf,growHeight,textOperations,type TextDraft} from './
 import { installIcons } from './icons';
 import { api, ApiError } from './api';
 import { CanvasView, orderedFrames } from './canvas';
+import {addOperations,besideBounds,oppositeSide,type Side} from './placement';
 import { Interaction, type Tool } from './interaction';
 import { showBoards, showProperties } from './panels';
 import { SlideList } from './slides';
 import { Presentation } from './presentation';
-import type { Board, BoardEvent, BoardSummary, CommentOperation, Operation,Actor,EditState,Element as BoardElement } from './types';
+import type { Board, Bounds, BoardEvent, BoardSummary, CommentOperation, Operation,Actor,EditState,Element as BoardElement } from './types';
 function browserActor():Actor {let id:string=crypto.randomUUID();try{const saved=localStorage.getItem('wireboard:actorId');if(saved&&saved.length<=128)id=saved;else localStorage.setItem('wireboard:actorId',id);}catch{}return {id,source:'user'};}
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const DELETED_TEXT='Объект удалён другим клиентом, текст не сохранён.';
@@ -29,7 +30,7 @@ export class Editor {
   textEditor = new InlineTextEditor({input:draft=>this.textInput(draft),commit:()=>this.commitText()});
   slides = new SlideList(el('slides'), el('slide-count'), id => { this.select([id]); this.view.fit(id); });private panelKey='';
   comments = new Comments(this.view, {current:()=>this.board,commit:(board,ops,revision)=>this.commitComments(board,ops,revision),report:error=>this.report(error),confirm:async()=>{if(this.queue?.mode==='uncertain')await this.queue.retry();else if(this.queue?.mode==='conflict')this.discard();},anchorMode:()=>this.interaction.setTool('comment')});
-  interaction = new Interaction(this.view, { current: () => this.board, editState:()=>this.queue!.projectedState(), busy: () => this.opening || !!this.draft, apply: (ops, revision, base) => this.apply(ops, revision, base), create:(element,base)=>{this.createObjects([{op:'create',element}],[base.board.nextId],base,'Создание объекта');this.editText(base.board.nextId,element.kind==='frame');},select: ids => this.select(ids), edit: id => this.editText(id), comment: (anchor, point) => this.comments.place(anchor, point), tool: tool => this.tool(tool), changed: () => { if (this.queued) void this.refresh(); }, report: error => this.report(error) });
+  interaction = new Interaction(this.view, { current: () => this.board, editState:()=>this.queue!.projectedState(), busy: () => this.opening || !!this.draft, apply: (ops, revision, base) => this.apply(ops, revision, base), create:(element,base)=>{this.createObjects([{op:'create',element}],[base.board.nextId],base,'Создание объекта');this.editText(base.board.nextId,element.kind==='frame');},addBeside:(id,side)=>this.addBeside(id,side),select: ids => this.select(ids), edit: id => this.editText(id), comment: (anchor, point) => this.comments.place(anchor, point), tool: tool => this.tool(tool), changed: () => { if (this.queued) void this.refresh(); }, report: error => this.report(error) });
   presentation = new Presentation(error => this.report(error));
   constructor() {
     this.view.onCamera = () => { el('zoom-value').textContent = `${Math.round(this.view.camera.zoom * 100)}%`; this.scheduleSaveView(); };
@@ -92,6 +93,15 @@ export class Editor {
     if(!(error instanceof ApiError)||['connection','persistence','request'].includes(error.code))return;
     for(const [commandId,save] of this.textSaves)if(ids.includes(save.id)){this.textSaves.delete(commandId);this.orphanSaves.add(commandId);}
     if(this.draft&&ids.includes(this.draft.id)){this.closeText();this.promptOperation();}
+  }
+  private addBeside(id:number,side:Side){
+    const base=this.queue?.projectedState(),source=base?.board.elements.find(e=>e.id===id);if(!base||!source||this.opening)return;
+    const others=base.board.elements.filter(e=>e.id!==id&&e.kind!=='frame'&&e.kind!=='connector');
+    this.addBlock(base,source,besideBounds(source,side,others),side,oppositeSide(side));
+  }
+  // One command creates the block and its connector, so a single undo removes both.
+  private addBlock(base:EditState,source:BoardElement,bounds:Bounds,fromPort:Side,toPort:Side){
+    const id=base.board.nextId;this.createObjects(addOperations(source,bounds,fromPort,toPort,id),[id],base,'Новый блок со связью');this.view.revealBounds(bounds);this.editText(id);
   }
   private clipboardAllowed(){return !!this.board&&!!this.queue&&!this.opening&&!this.draft&&!this.presentation.active&&!isTextTarget(document.activeElement)&&!document.querySelector('dialog[open]')&&!this.interaction.gesture;}
   private copy(event:ClipboardEvent){
