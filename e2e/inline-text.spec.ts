@@ -209,3 +209,11 @@ test('a_save_queued_behind_a_rejected_create_is_dropped',async({page})=>{
   await page.waitForTimeout(300);await expect(page.locator('#text-conflict')).toBeHidden();await expect(editor(page)).toBeHidden();
   await expect(page.locator('#operation-dialog')).toBeHidden();await expect(page.locator('#operation-return')).toBeHidden();expect((await board(page,id)).elements[1]).toEqual(agent);
 });
+test('wheel_over_the_editor_and_the_conflict_bar_moves_the_canvas',async({page})=>{
+  await page.emulateMedia({reducedMotion:'reduce'});await setup(page);await open(page);await page.locator('#text-draft').fill('Черновик');const start=await camera(page);
+  expect(await wheel(page,{deltaX:25,deltaY:35},'#text-editor')).toBe(true);await expect.poll(async()=>(await camera(page)).x).toBeCloseTo(start.x-25,0);
+  const b=await bounding(editor(page));expect(await wheel(page,{deltaY:-100,ctrlKey:true,clientX:b.x+10,clientY:b.y+10},'#text-editor')).toBe(true);
+  await expect.poll(async()=>(await camera(page)).zoom).toBeGreaterThan(start.zoom);const zoomed=await camera(page);
+  expect(await wheel(page,{deltaY:40},'#text-conflict')).toBe(true);await expect.poll(async()=>(await camera(page)).y).toBeCloseTo(zoomed.y-40,0);
+  await expect(page.locator('#text-draft')).toHaveValue('Черновик');await expect(page.locator('#text-draft')).toBeFocused();
+});

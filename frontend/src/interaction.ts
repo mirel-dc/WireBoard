@@ -49,12 +49,15 @@ export class Interaction {
   constructor(private view:CanvasView,private callbacks:Callbacks){
     view.svg.addEventListener('pointerdown',e=>this.down(e));view.svg.addEventListener('pointermove',e=>this.move(e));view.svg.addEventListener('pointerup',e=>this.up(e));view.svg.addEventListener('pointercancel',()=>this.cancel());view.svg.addEventListener('lostpointercapture',()=>{if(this.gesture)this.cancel();});window.addEventListener('blur',()=>{this.space=false;this.finishNudge();this.cancel();});
     view.svg.addEventListener('dblclick',()=>{const target=this.callbacks.current()?.elements.find(e=>e.id===this.doubleTap);if(target&&this.tool==='select')this.callbacks.edit(target.id);});
-    view.svg.addEventListener('wheel',e=>{
-      if(document.querySelector('#app')?.hasAttribute('inert')||document.querySelector('dialog[open]'))return;
-      e.preventDefault();if(this.gesture)return;
-      const rect=view.svg.getBoundingClientRect(),intent=wheelIntent(e,rect);if(!intent)return;
-      this.finishNudge();if(intent.type==='zoom'){if(isDiscreteZoom(e))view.animateZoom(intent.factor,e.clientX,e.clientY);else view.zoom(intent.factor,e.clientX,e.clientY);}else view.pan(intent.dx,intent.dy);
-    },{passive:false});view.svg.addEventListener('contextmenu',e=>e.preventDefault());view.svg.addEventListener('pointerleave',()=>view.setHover(null));
+    // The inline editor and its conflict bar sit above the canvas: the wheel over them still moves the camera.
+    for(const target of [view.svg,document.getElementById('text-editor'),document.getElementById('text-conflict')])target?.addEventListener('wheel',e=>this.wheel(e as WheelEvent),{passive:false});
+    view.svg.addEventListener('contextmenu',e=>e.preventDefault());view.svg.addEventListener('pointerleave',()=>view.setHover(null));
+  }
+  private wheel(e:WheelEvent){
+    if(document.querySelector('#app')?.hasAttribute('inert')||document.querySelector('dialog[open]'))return;
+    e.preventDefault();if(this.gesture)return;
+    const view=this.view,rect=view.svg.getBoundingClientRect(),intent=wheelIntent(e,rect);if(!intent)return;
+    this.finishNudge();if(intent.type==='zoom'){if(isDiscreteZoom(e))view.animateZoom(intent.factor,e.clientX,e.clientY);else view.zoom(intent.factor,e.clientX,e.clientY);}else view.pan(intent.dx,intent.dy);
   }
   setTool(tool:Tool){if(this.gesture?.type==='connector-end')this.cancel();this.tool=tool;this.connectorFrom=null;this.view.svg.dataset.tool=tool;this.callbacks.tool(tool);}
   private hover(event:PointerEvent){const target=this.tool==='select'&&!this.space?this.view.elementAt(event.target):undefined;this.view.setHover(target&&target.kind!=='connector'&&target.kind!=='frame'?target.id:null);}
