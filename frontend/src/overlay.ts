@@ -2,11 +2,14 @@ import type {Bounds,Element,Kind} from './types';
 import type {Point} from './anchors';
 import {reducedMotion} from './camera';
 import {setAttrs,svgElement} from './svg';
-import {SIDES} from './placement';
+import {SIDES,type Side} from './placement';
 const ACCENT='#7e4bb2';
 // Screen pixels from the block edge to the farthest handle edge (40 + radius 11 + 1): hover stays alive within this reach.
 export const HANDLE_REACH=52;
+export const DOT_OFFSET=14,PLUS_OFFSET=40,PLUS_RADIUS=11;
 const OUT={left:[-1,0],right:[1,0],top:[0,-1],bottom:[0,1]} as const;
+// The point `offset` screen pixels outward from the middle of a block side.
+export function sidePoint(b:Bounds,side:Side,offset:number,zoom:number):Point{const [ox,oy]=OUT[side];return{x:b.x+b.width*(ox?(ox>0?1:0):.5)+ox*offset/zoom,y:b.y+b.height*(oy?(oy>0?1:0):.5)+oy*offset/zoom};}
 const HANDLES=[['nw',0,0,'nwse'],['n',.5,0,'ns'],['ne',1,0,'nesw'],['e',1,.5,'ew'],['se',1,1,'nwse'],['s',.5,1,'ns'],['sw',0,1,'nesw'],['w',0,.5,'ew']] as const;
 export interface OverlayState{selected:Element[];connectorEnds:{id:number;from:Point|null;to:Point|null}|null;hover:Element|null;marquee:Bounds|null;drop:Element|null;create:{bounds:Bounds;kind:Kind}|null;connectorTarget:{element:Element;port:Point}|null;connect:Element|null;wire:Point[]|null;zoom:number}
 const show=(node:globalThis.Element,visible:boolean)=>setAttrs(node,{display:visible?'inline':'none'});
@@ -48,9 +51,9 @@ export class OverlayRenderer {
     SIDES.forEach((side,i)=>{
       const dot=this.dots[i],add=this.adds[i];show(dot,visible);show(add,visible);
       if(!visible||!c){dot.removeAttribute('data-connect');add.removeAttribute('data-add');return;}
-      const [ox,oy]=OUT[side],mx=c.x+c.width*(ox?(ox>0?1:0):.5),my=c.y+c.height*(oy?(oy>0?1:0):.5),dx=mx+ox*14/z,dy=my+oy*14/z,ax=mx+ox*40/z,ay=my+oy*40/z,p=5/z;
+      const {x:dx,y:dy}=sidePoint(c,side,DOT_OFFSET,z),{x:ax,y:ay}=sidePoint(c,side,PLUS_OFFSET,z),p=5/z;
       setAttrs(dot,{'data-connect':c.id});setAttrs(dot.children[0],{cx:dx,cy:dy,r:12/z});setAttrs(dot.children[1],{cx:dx,cy:dy,r:5/z,'stroke-width':1.5/z});
-      setAttrs(add,{'data-add':c.id});setAttrs(add.children[0],{cx:ax,cy:ay,r:11/z});setAttrs(add.children[1],{d:`M ${ax-p} ${ay} H ${ax+p} M ${ax} ${ay-p} V ${ay+p}`,'stroke-width':2/z});
+      setAttrs(add,{'data-add':c.id});setAttrs(add.children[0],{cx:ax,cy:ay,r:PLUS_RADIUS/z});setAttrs(add.children[1],{d:`M ${ax-p} ${ay} H ${ax+p} M ${ax} ${ay-p} V ${ay+p}`,'stroke-width':2/z});
     });
     const connectKey=visible&&c?String(c.id):'';
     if(connectKey!==this.connectKey){this.connectKey=connectKey;if(connectKey&&!reducedMotion())this.connect.animate([{opacity:0},{opacity:1}],{duration:80,easing:'ease-out'});}

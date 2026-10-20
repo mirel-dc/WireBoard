@@ -1,7 +1,7 @@
 import {CanvasView,members} from './canvas';
 import {wheelIntent} from './navigation';
 import {isDiscreteZoom} from './camera';
-import {HANDLE_REACH} from './overlay';
+import {HANDLE_REACH,PLUS_OFFSET,PLUS_RADIUS,sidePoint} from './overlay';
 import type {Side} from './placement';
 import {connectorPreviewPoints,connectorTarget,type ConnectorEnd,type ConnectorTarget} from './anchors';
 import type {Anchor,Board,EditState,Element,Kind,Operation} from './types';
@@ -127,8 +127,10 @@ export class Interaction {
     let ops:Operation[]=[];
     if(g.type==='connector-end'&&g.dragged&&g.target){const link=g.base.board.elements.find(e=>e.id===g.id)!;if(link[g.end]!==g.target.id||link[`${g.end}Port`]!==g.target.port)ops=[{op:'update',id:g.id,patch:{[g.end]:g.target.id,[`${g.end}Port`]:g.target.port}}];}
     if(g.type==='connect'){
-      const s=g.source,halo=12/this.view.camera.zoom,onSource=g.point.x>=s.x-halo&&g.point.x<=s.x+s.width+halo&&g.point.y>=s.y-halo&&g.point.y<=s.y+s.height+halo;
-      if(!g.dragged){if(g.add)this.callbacks.addBeside(s.id,g.side);}else if(g.target)this.callbacks.connect(s.id,g.side,g.target);else if(!onSource)this.callbacks.addAt(s.id,g.side,g.point);
+      const s=g.source,z=this.view.camera.zoom,halo=12/z,onSource=g.point.x>=s.x-halo&&g.point.x<=s.x+s.width+halo&&g.point.y>=s.y-halo&&g.point.y<=s.y+s.height+halo;
+      // A press on "+" that slips but is released over the same "+" is still a click, not a drop next to the source.
+      const plus=g.add?sidePoint(s,g.side,PLUS_OFFSET,z):null,slipped=!!plus&&Math.hypot(g.point.x-plus.x,g.point.y-plus.y)*z<=PLUS_RADIUS;
+      if(!g.dragged||slipped){if(g.add)this.callbacks.addBeside(s.id,g.side);}else if(g.target)this.callbacks.connect(s.id,g.side,g.target);else if(!onSource)this.callbacks.addAt(s.id,g.side,g.point);
     }
     if(g.type==='create'){const kind=g.kind;this.callbacks.create({id:g.base.board.nextId,kind,...g.bounds,text:kind==='frame'?'Новый фрейм':'',title:'',fill:kind==='frame'?'#ffffff':'#eee5f8',stroke:'#ae91c5',fontSize:16},g.base);this.setTool('select');}
     if(g.type==='move'&&Math.hypot(g.dx,g.dy)>2/this.view.camera.zoom)ops=moveOperations(g.board,g.ids,g.dx,g.dy);
