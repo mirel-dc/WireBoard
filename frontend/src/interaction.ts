@@ -80,11 +80,11 @@ export class Interaction {
   }
   private begin(g:Gesture){this.gesture=g;this.view.svg.setPointerCapture(g.pointer);}
   private down(event:PointerEvent){
-    this.finishNudge();this.view.setHover(null);
+    // A pressed handle keeps its block hovered: clearing the hover would hide the handles or hand them to the selected block.
+    const grip=(event.target as globalThis.Element).closest('[data-connect],[data-add]');this.finishNudge();if(!grip)this.view.setHover(null);
     const board=this.callbacks.current();if(!board||this.gesture)return;const point=this.view.worldPoint(event.clientX,event.clientY);let target=this.view.elementAt(event.target);this.downTarget=target?.id??null;this.doubleTap=this.downTarget!==null&&this.downTarget===this.previousTap?this.downTarget:null;this.view.svg.focus();
     if(this.tool==='hand'||this.space||event.button===1){this.view.stopZoom();this.begin({type:'pan',pointer:event.pointerId,x:event.clientX,y:event.clientY,cameraX:this.view.camera.x,cameraY:this.view.camera.y});event.preventDefault();return;}
     if(this.callbacks.busy()||event.button!==0)return;
-    const grip=(event.target as globalThis.Element).closest('[data-connect],[data-add]');
     if(grip&&this.tool==='select'){
       const base=this.callbacks.editState(),id=Number(grip.getAttribute('data-connect')??grip.getAttribute('data-add')),source=base.board.elements.find(e=>e.id===id);
       if(source){this.begin({type:'connect',pointer:event.pointerId,source:structuredClone(source),side:grip.getAttribute('data-side') as Side,add:grip.hasAttribute('data-add'),screen:{x:event.clientX,y:event.clientY},client:{x:event.clientX,y:event.clientY},dragged:false,point,target:null,base});event.preventDefault();}
