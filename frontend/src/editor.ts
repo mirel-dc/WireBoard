@@ -7,7 +7,8 @@ import {MIN_EDIT_ZOOM,draftOf,growHeight,textOperations,type TextDraft} from './
 import { installIcons } from './icons';
 import { api, ApiError } from './api';
 import { CanvasView, orderedFrames } from './canvas';
-import {addOperations,besideBounds,oppositeSide,type Side} from './placement';
+import {addOperations,besideBounds,dropBounds,oppositeSide,type Side} from './placement';
+import type {ConnectorTarget} from './anchors';
 import { Interaction, type Tool } from './interaction';
 import { showBoards, showProperties } from './panels';
 import { SlideList } from './slides';
@@ -30,7 +31,7 @@ export class Editor {
   textEditor = new InlineTextEditor({input:draft=>this.textInput(draft),commit:()=>this.commitText()});
   slides = new SlideList(el('slides'), el('slide-count'), id => { this.select([id]); this.view.fit(id); });private panelKey='';
   comments = new Comments(this.view, {current:()=>this.board,commit:(board,ops,revision)=>this.commitComments(board,ops,revision),report:error=>this.report(error),confirm:async()=>{if(this.queue?.mode==='uncertain')await this.queue.retry();else if(this.queue?.mode==='conflict')this.discard();},anchorMode:()=>this.interaction.setTool('comment')});
-  interaction = new Interaction(this.view, { current: () => this.board, editState:()=>this.queue!.projectedState(), busy: () => this.opening || !!this.draft, apply: (ops, revision, base) => this.apply(ops, revision, base), create:(element,base)=>{this.createObjects([{op:'create',element}],[base.board.nextId],base,'Создание объекта');this.editText(base.board.nextId,element.kind==='frame');},addBeside:(id,side)=>this.addBeside(id,side),select: ids => this.select(ids), edit: id => this.editText(id), comment: (anchor, point) => this.comments.place(anchor, point), tool: tool => this.tool(tool), changed: () => { if (this.queued) void this.refresh(); }, report: error => this.report(error) });
+  interaction = new Interaction(this.view, { current: () => this.board, editState:()=>this.queue!.projectedState(), busy: () => this.opening || !!this.draft, apply: (ops, revision, base) => this.apply(ops, revision, base), create:(element,base)=>{this.createObjects([{op:'create',element}],[base.board.nextId],base,'Создание объекта');this.editText(base.board.nextId,element.kind==='frame');},addBeside:(id,side)=>this.addBeside(id,side),addAt:(id,side,point)=>this.addAt(id,side,point),connect:(id,side,target)=>this.connectBlocks(id,side,target),select: ids => this.select(ids), edit: id => this.editText(id), comment: (anchor, point) => this.comments.place(anchor, point), tool: tool => this.tool(tool), changed: () => { if (this.queued) void this.refresh(); }, report: error => this.report(error) });
   presentation = new Presentation(error => this.report(error));
   constructor() {
     this.view.onCamera = () => { el('zoom-value').textContent = `${Math.round(this.view.camera.zoom * 100)}%`; this.scheduleSaveView(); };
@@ -102,6 +103,14 @@ export class Editor {
   // One command creates the block and its connector, so a single undo removes both.
   private addBlock(base:EditState,source:BoardElement,bounds:Bounds,fromPort:Side,toPort:Side){
     const id=base.board.nextId;this.createObjects(addOperations(source,bounds,fromPort,toPort,id),[id],base,'Новый блок со связью');this.view.revealBounds(bounds);this.editText(id);
+  }
+  private addAt(id:number,fromSide:Side,point:{x:number;y:number}){
+    const base=this.queue?.projectedState(),source=base?.board.elements.find(e=>e.id===id);if(!base||!source||this.opening)return;
+    const drop=dropBounds(source,point);this.addBlock(base,source,drop.bounds,fromSide,oppositeSide(drop.side));
+  }
+  private connectBlocks(id:number,side:Side,target:ConnectorTarget){
+    const base=this.queue?.projectedState();if(!base||this.opening||!base.board.elements.some(e=>e.id===id)||!base.board.elements.some(e=>e.id===target.id))return;
+    const linkId=base.board.nextId;this.createObjects([{op:'create',element:{id:linkId,kind:'connector',from:id,to:target.id,fromPort:side,toPort:target.port}}],[linkId],base,'Новая связь');
   }
   private clipboardAllowed(){return !!this.board&&!!this.queue&&!this.opening&&!this.draft&&!this.presentation.active&&!isTextTarget(document.activeElement)&&!document.querySelector('dialog[open]')&&!this.interaction.gesture;}
   private copy(event:ClipboardEvent){

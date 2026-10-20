@@ -8,13 +8,14 @@ const ACCENT='#7e4bb2';
 export const HANDLE_REACH=52;
 const OUT={left:[-1,0],right:[1,0],top:[0,-1],bottom:[0,1]} as const;
 const HANDLES=[['nw',0,0,'nwse'],['n',.5,0,'ns'],['ne',1,0,'nesw'],['e',1,.5,'ew'],['se',1,1,'nwse'],['s',.5,1,'ns'],['sw',0,1,'nesw'],['w',0,.5,'ew']] as const;
-export interface OverlayState{selected:Element[];connectorEnds:{id:number;from:Point|null;to:Point|null}|null;hover:Element|null;marquee:Bounds|null;drop:Element|null;create:{bounds:Bounds;kind:Kind}|null;connectorTarget:{element:Element;port:Point}|null;connect:Element|null;zoom:number}
+export interface OverlayState{selected:Element[];connectorEnds:{id:number;from:Point|null;to:Point|null}|null;hover:Element|null;marquee:Bounds|null;drop:Element|null;create:{bounds:Bounds;kind:Kind}|null;connectorTarget:{element:Element;port:Point}|null;connect:Element|null;wire:Point[]|null;zoom:number}
 const show=(node:globalThis.Element,visible:boolean)=>setAttrs(node,{display:visible?'inline':'none'});
 // Nodes are created once and only updated, so a frame never rebuilds the overlay.
 export class OverlayRenderer {
   private hover=svgElement('rect',{'data-hover':'',rx:6,fill:'none',stroke:ACCENT,'stroke-opacity':.55,'pointer-events':'none',display:'none'});
   private drop=svgElement('rect',{rx:4,fill:'#7e4bb211',stroke:ACCENT,'pointer-events':'none',display:'none'});
   private create=svgElement('g',{'pointer-events':'none',display:'none'});private createRect=svgElement('rect');private createLabel=svgElement('text',{fill:'#51316f','font-family':'Golos Text'});
+  private wire=svgElement('path',{'data-wire-preview':'',fill:'none',stroke:ACCENT,'stroke-linecap':'round','pointer-events':'none',display:'none'});
   private target=svgElement('g',{'pointer-events':'none',display:'none'});private targetRect=svgElement('rect',{rx:5,fill:'#7e4bb211',stroke:ACCENT});private targetDot=svgElement('circle',{fill:ACCENT});
   private frames=svgElement('g',{'pointer-events':'none'});private controls=svgElement('g');
   private handles=HANDLES.map(([handle,,,cursor])=>{const g=svgElement('g',{'data-handle':handle,cursor:`${cursor}-resize`,display:'none'});g.append(svgElement('rect',{fill:'transparent'}),svgElement('rect',{fill:'#ffffff',stroke:ACCENT,'pointer-events':'none'}));return g;});
@@ -24,7 +25,7 @@ export class OverlayRenderer {
   private dots=SIDES.map(side=>{const g=svgElement('g',{'data-side':side,cursor:'crosshair',display:'none','aria-label':'Протянуть связь'});g.append(svgElement('circle',{fill:'transparent'}),svgElement('circle',{fill:'#ffffff',stroke:ACCENT,'pointer-events':'none'}));return g;});
   private adds=SIDES.map(side=>{const g=svgElement('g',{'data-side':side,cursor:'pointer',display:'none','aria-label':'Добавить блок со связью'});g.append(svgElement('circle',{fill:ACCENT}),svgElement('path',{fill:'none',stroke:'#ffffff','stroke-linecap':'round','pointer-events':'none'}));return g;});
   private selectionKey='';
-  constructor(root:SVGGElement){this.create.append(this.createRect,this.createLabel);this.target.append(this.targetRect,this.targetDot);this.controls.append(...this.handles,...this.ends);this.connect.append(...this.dots,...this.adds);root.replaceChildren(this.hover,this.drop,this.create,this.target,this.frames,this.connect,this.controls,this.marquee);}
+  constructor(root:SVGGElement){this.create.append(this.createRect,this.createLabel);this.target.append(this.targetRect,this.targetDot);this.controls.append(...this.handles,...this.ends);this.connect.append(...this.dots,...this.adds);root.replaceChildren(this.hover,this.drop,this.create,this.wire,this.target,this.frames,this.connect,this.controls,this.marquee);}
   render(s:OverlayState):void{
     const z=s.zoom;
     show(this.hover,!!s.hover);if(s.hover)setAttrs(this.hover,{x:s.hover.x-2,y:s.hover.y-2,width:s.hover.width+4,height:s.hover.height+4,'stroke-width':1/z});
@@ -35,6 +36,7 @@ export class OverlayRenderer {
     show(this.target,!!s.connectorTarget);
     if(s.connectorTarget){const {element:e,port}=s.connectorTarget;setAttrs(this.target,{'data-connector-target':e.id});setAttrs(this.targetRect,{x:e.x,y:e.y,width:e.width,height:e.height,'stroke-width':2/z});setAttrs(this.targetDot,{cx:port.x,cy:port.y,r:5/z});}
     else this.target.removeAttribute('data-connector-target');
+    show(this.wire,!!s.wire?.length);if(s.wire?.length)setAttrs(this.wire,{d:s.wire.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' '),'stroke-width':2/z});
     const boxes=s.selected.filter(e=>e.kind!=='connector');
     while(this.frames.childElementCount<boxes.length)this.frames.append(svgElement('rect',{rx:6,fill:'none',stroke:ACCENT}));
     [...this.frames.children].forEach((rect,i)=>{const e=boxes[i];show(rect,!!e);if(e)setAttrs(rect,{x:e.x-4,y:e.y-4,width:e.width+8,height:e.height+8,'stroke-width':1.5/z});});

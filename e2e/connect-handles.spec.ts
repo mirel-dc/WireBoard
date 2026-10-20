@@ -76,3 +76,41 @@ test('agent_change_during_plus_closes_the_new_block_editor',async({page})=>{
   await expect(page.locator('#text-editor')).toBeHidden();await expect(page.locator('#operation-dialog')).toBeVisible();
   const agent=(await board(page,id)).elements.find((e:{text:string})=>e.text==='Agent');expect(agent).toBeTruthy();
 });
+async function screen(page:Page,x:number,y:number){return page.locator('#world').evaluate((e,p)=>{const v=new DOMPoint(p.x,p.y).matrixTransform((e as SVGGraphicsElement).getScreenCTM()!);return{x:v.x,y:v.y};},{x,y});}
+async function grabDot(page:Page,side='right',id=1){await hoverCard(page,id);const d=await bounding(page.locator(`[data-connect="${id}"][data-side="${side}"]`));await page.mouse.move(d.x+d.width/2,d.y+d.height/2);await page.mouse.down();return d;}
+test('dragging_from_a_dot_onto_a_block_connects_them',async({page})=>{
+  const id=await setup(page);await apply(page,id,1,[{op:'create',element:{kind:'rectangle',x:500,y:300,text:'B'}}]);await expect(page.locator('#scene [data-id="2"]')).toBeVisible();
+  await grabDot(page);const p=await screen(page,510,356);await page.mouse.move(p.x,p.y,{steps:8});
+  await expect(page.locator('[data-wire-preview]')).toBeVisible();await expect(page.locator('[data-connector-target="2"]')).toBeVisible();await page.mouse.up();
+  await expect.poll(async()=>(await board(page,id)).elements.length).toBe(3);const link=(await board(page,id)).elements[2];
+  expect([link.kind,link.from,link.to,link.fromPort,link.toPort]).toEqual(['connector',1,2,'right','left']);await expect(page.locator('#text-editor')).toBeHidden();
+});
+test('dragging_into_empty_space_creates_a_linked_block_at_the_drop',async({page})=>{
+  const id=await setup(page);await grabDot(page);const p=await screen(page,700,400);await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
+  await expect(page.locator('#text-editor')).toBeVisible();await page.keyboard.press('Escape');await expect.poll(async()=>(await board(page,id)).elements.length).toBe(3);
+  const [,block,link]=(await board(page,id)).elements;expect([block.x,block.y]).toEqual([700,344]);expect([link.from,link.to,link.fromPort,link.toPort]).toEqual([1,block.id,'right','left']);
+});
+test('dropping_back_on_the_source_creates_nothing',async({page})=>{
+  const id=await setup(page);await grabDot(page);const p=await screen(page,210,156);await page.mouse.move(p.x+80,p.y,{steps:4});await page.mouse.move(p.x,p.y,{steps:4});await page.mouse.up();
+  await page.waitForTimeout(200);expect((await board(page,id)).revision).toBe(1);await expect(page.locator('[data-wire-preview]')).toBeHidden();
+});
+test('escape_cancels_a_drag_without_a_command',async({page})=>{
+  const id=await setup(page);const d=await grabDot(page);await page.mouse.move(d.x+120,d.y+60,{steps:6});await expect(page.locator('[data-wire-preview]')).toBeVisible();
+  await page.keyboard.press('Escape');await expect(page.locator('[data-wire-preview]')).toBeHidden();await page.mouse.up();await page.waitForTimeout(200);expect((await board(page,id)).revision).toBe(1);
+});
+test('dragging_from_a_plus_works_like_a_dot',async({page})=>{
+  const id=await setup(page);await hoverCard(page);const plus=await bounding(page.locator('[data-add="1"][data-side="bottom"]'));
+  await page.mouse.move(plus.x+plus.width/2,plus.y+plus.height/2);await page.mouse.down();const p=await screen(page,210,600);await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
+  await expect(page.locator('#text-editor')).toBeVisible();await page.keyboard.press('Escape');await expect.poll(async()=>(await board(page,id)).elements.length).toBe(3);
+  const [,block,link]=(await board(page,id)).elements;expect([block.x,block.y]).toEqual([100,600]);expect([link.fromPort,link.toPort]).toEqual(['bottom','top']);
+});
+test('wheel_during_a_drag_pans_and_the_preview_follows',async({page})=>{
+  await setup(page);const d=await grabDot(page);await page.mouse.move(d.x+150,d.y,{steps:6});const before=await bounding(page.locator('[data-wire-preview]'));
+  await page.mouse.wheel(0,120);await expect.poll(async()=>(await bounding(page.locator('[data-wire-preview]'))).height).not.toBeCloseTo(before.height,0);
+  await page.keyboard.press('Escape');await page.mouse.up();
+});
+test('plus_on_an_empty_text_block_then_escape_leaves_no_connector',async({page})=>{
+  const id=await setup(page);await apply(page,id,1,[{op:'create',element:{kind:'text',x:100,y:400,width:320,height:100,text:'T'}}]);await expect(page.locator('#scene [data-id="2"]')).toBeVisible();
+  await clickPlus(page,'right',2);await expect(page.locator('#text-editor')).toBeVisible();await page.keyboard.press('Escape');
+  await expect.poll(async()=>{const els=(await board(page,id)).elements;return[els.some((e:{kind:string})=>e.kind==='connector'),els.some((e:{id:number;kind:string})=>e.id===2&&e.kind==='text'),els.length];}).toEqual([false,true,2]);
+});
