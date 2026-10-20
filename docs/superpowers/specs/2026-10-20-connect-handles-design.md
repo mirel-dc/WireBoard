@@ -1,6 +1,6 @@
 # Wireboard: точки и «+» для создания блоков и связей (этап 2b)
 
-Дата: 20 октября 2026. Статус: дизайн утверждён в обсуждении, ожидает ревью спека.
+Дата: 20 октября 2026. Статус: дизайн утверждён в обсуждении, реализован (этап 2b).
 
 ## Зачем
 
@@ -71,7 +71,7 @@
 
 ## Компоненты
 
-- `frontend/src/placement.ts` (новый) — чистые функции: `besideBounds(source, side, others)` (место для «+» со сдвигом), `dropBounds(source, point)` (место и сторона при отпускании в пустоте), `oppositeSide(side)`, `cloneForAdd(source)` (поля нового блока).
+- `frontend/src/placement.ts` (новый) — чистые функции: `besideBounds(source, side, others)` (место для «+» со сдвигом), `dropBounds(source, point)` (место и сторона при отпускании в пустоте), `oppositeSide(side)`, `addOperations(source,bounds,fromPort,toPort,id)` (операции блока и связи).
 - `frontend/src/overlay.ts` — узлы точек и «+», состояние `connect` в `OverlayState`.
 - `frontend/src/canvas.ts` — какой блок показывает ручки, превью протягиваемой стрелки.
 - `frontend/src/interaction.ts` — жесты `add` и `connect-drag`, колбэк создания блока со связью.

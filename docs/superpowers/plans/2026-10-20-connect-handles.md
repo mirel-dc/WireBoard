@@ -214,7 +214,7 @@ const OUT={left:[-1,0],right:[1,0],top:[0,-1],bottom:[0,1]} as const;
   private adds=SIDES.map(side=>{const g=svgElement('g',{'data-side':side,cursor:'pointer',display:'none','aria-label':'Добавить блок со связью'});g.append(svgElement('circle',{fill:ACCENT}),svgElement('path',{fill:'none',stroke:'#ffffff','stroke-linecap':'round','pointer-events':'none'}));return g;});
 ```
 
-- In the constructor replace `root.replaceChildren(this.hover,this.drop,this.create,this.target,this.frames,this.controls,this.marquee);` with `this.connect.append(...this.dots,...this.adds);root.replaceChildren(this.hover,this.drop,this.create,this.target,this.frames,this.controls,this.connect,this.marquee);`
+- In the constructor replace `root.replaceChildren(this.hover,this.drop,this.create,this.target,this.frames,this.controls,this.marquee);` with `this.connect.append(...this.dots,...this.adds);root.replaceChildren(this.hover,this.drop,this.create,this.target,this.frames,this.connect,this.controls,this.marquee);`. The handles sit below `controls`, so where a resize handle overlaps a connection dot the resize handle wins (final-review ruling).
 - In `render`, before the `const key=s.selected.map(e=>e.id).join(',');` line add:
 
 ```ts
