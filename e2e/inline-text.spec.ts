@@ -108,3 +108,20 @@ test('agent_deleting_the_block_during_a_conflict_clears_it',async({page})=>{
   await open(page,next);await page.locator('#text-draft').fill('Saved');await page.keyboard.press('Escape');
   await expect.poll(async()=>(await board(page,id)).elements[0].text).toBe('Saved');
 });
+test('frame_label_is_edited_above_the_frame',async({page})=>{
+  const id=await setup(page);await apply(page,id,1,[{op:'create',element:{kind:'frame',x:420,y:220,width:400,height:220,text:'Frame'}}]);await expect(page.locator('#scene [data-id="2"]')).toBeVisible();
+  await page.locator('#scene [data-id="2"] [data-frame-header-hit]').dblclick();await expect(editor(page)).toHaveAttribute('data-kind','frame');
+  const frame=await bounding(page.locator('#scene [data-id="2"] > rect:not([data-frame-header-hit])')),label=await bounding(editor(page));
+  expect(label.y+label.height).toBeLessThanOrEqual(frame.y+1);expect(Math.abs(label.x-frame.x)).toBeLessThanOrEqual(1.5);
+  await expect(page.locator('#scene [data-id="2"] > text')).toHaveText('');await expect(page.locator('#title-draft')).toBeHidden();
+  await page.locator('#text-draft').fill('Слайд 1');await page.locator('#text-draft').press('Enter');
+  await expect(editor(page)).toBeHidden();await expect.poll(async()=>(await board(page,id)).elements[1].text).toBe('Слайд 1');await expect(page.locator('#scene [data-id="2"] > text')).toHaveText('Слайд 1');
+});
+test('connector_caption_is_edited_in_place',async({page})=>{
+  const id=await setup(page);await apply(page,id,1,[{op:'create',element:{kind:'rectangle',x:520,y:100,text:'Second'}},{op:'create',element:{kind:'connector',from:1,to:2,text:'связь'}}]);
+  const label=page.locator('#scene [data-id="3"] [data-connector-label]');await expect(label).toBeVisible();const caption=await bounding(label);
+  await label.dblclick();await expect(editor(page)).toHaveAttribute('data-kind','connector');await expect(label).toHaveCount(0);
+  const box=await bounding(editor(page));expect(Math.abs(box.x+box.width/2-(caption.x+caption.width/2))).toBeLessThanOrEqual(2);
+  await page.locator('#text-draft').fill('новая подпись');await page.locator('#text-draft').press('Escape');
+  await expect.poll(async()=>(await board(page,id)).elements[2].text).toBe('новая подпись');await expect(page.locator('#scene [data-id="3"] [data-connector-label]')).toBeVisible();
+});

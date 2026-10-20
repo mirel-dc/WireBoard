@@ -5,6 +5,7 @@ import {SceneRenderer} from './scene';
 import {OverlayRenderer} from './overlay';
 import {ZoomAnimation,reducedMotion,zoomAround,type Camera} from './camera';
 import {changedIds} from './diff';
+import {layoutConnector} from './preview';
 export function members(board: Board, ids: number[]) {
   const set = new Set(ids);
   const frontier=board.elements.filter(e=>ids.includes(e.id)&&e.kind==='frame').map(e=>e.id);
@@ -56,7 +57,14 @@ export class CanvasView {
   // The edited object hides its SVG text and selection; previewTextHeight survives clearPreview so a window blur keeps the grown block.
   setEditing(id:number|null){if(this.editing===id)return;const ids=[this.editing,id].filter((v):v is number=>v!==null);this.editing=id;this.editingHeight=null;this.renderer.editing=id;this.previewChanged(ids);}
   previewTextHeight(height:number|null){if(this.editing===null||this.editingHeight===height)return;this.editingHeight=height;this.previewChanged([this.editing]);this.frames.invalidate('chrome');}
-  textBox(id:number):Bounds|null{const raw=this.board?.elements.find(e=>e.id===id);if(!raw)return null;const e=this.project(raw);return{x:e.x,y:e.y,width:e.width,height:e.height};}
+  textBox(id:number):Bounds|null{
+    const raw=this.board?.elements.find(e=>e.id===id);if(!raw||!this.board)return null;const e=this.project(raw);
+    if(e.kind==='frame')return{x:e.x,y:e.y-30,width:Math.max(160,e.width),height:24};
+    if(e.kind!=='connector')return{x:e.x,y:e.y,width:e.width,height:e.height};
+    if(!this.metrics)return null;
+    const board={...this.board,elements:this.board.elements.map(n=>this.project(n))},b=layoutConnector(board,e,this.metrics,this.linkPoints(e)).captionBounds,width=Math.max(276,b.width);
+    return{x:b.x+b.width/2-width/2,y:b.y,width,height:Math.max(b.height,e.fontSize*1.4+12)};
+  }
   project(e:Element):Element;
   project(board:Board):void;
   project(input:Element|Board):Element|void {

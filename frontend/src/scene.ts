@@ -47,7 +47,7 @@ export class SceneRenderer {
   private paintFrame(group:SVGGElement,e:Element,metrics:FontMetrics){
     const width=textWidth(e.text,15,e.fontWeight,metrics);group.dataset.titleWidth=String(width);this.frameHeader(group,width);
     let title=group.querySelector<SVGTextElement>(':scope > text');if(!title){title=svgElement('text',{'font-family':'Golos Text','font-size':15,fill:'#66786c','pointer-events':'none'});group.append(title);}
-    setAttrs(title,{x:0,y:-12,'font-weight':e.fontWeight});if(title.textContent!==e.text)title.textContent=e.text;
+    setAttrs(title,{x:0,y:-12,'font-weight':e.fontWeight});const text=this.editing===e.id?'':e.text;if(title.textContent!==text)title.textContent=text;
   }
   private frameHeader(group:SVGGElement,titleWidth:number){
     let hit=group.querySelector<SVGRectElement>('[data-frame-header-hit]');if(!hit){hit=svgElement('rect',{'data-frame-header-hit':'',fill:'transparent','pointer-events':'all'});group.append(hit);}
@@ -59,9 +59,9 @@ export class SceneRenderer {
     const d=points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ');
     let paths=group.querySelectorAll(':scope > path');if(!paths.length){group.prepend(svgElement('path'),svgElement('path'));paths=group.querySelectorAll(':scope > path');}
     setAttrs(paths[0],{d,fill:'none',stroke:e.stroke,'stroke-width':2,'marker-end':`url(#arrow-${e.id})`});setAttrs(paths[1],{d,fill:'none',stroke:'transparent','stroke-width':16});
-    const signature=JSON.stringify([layout.captionBounds,layout.caption]);if(this.signatures.get(e.id)===signature)return;this.signatures.set(e.id,signature);
+    const editing=this.editing===e.id,signature=JSON.stringify([editing,layout.captionBounds,layout.caption]);if(this.signatures.get(e.id)===signature)return;this.signatures.set(e.id,signature);
     group.querySelectorAll(':scope > rect,:scope > text').forEach(n=>n.remove());
-    if(e.text)group.append(svgElement('rect',{...layout.captionBounds,rx:3,fill:'#ffffff','data-connector-label':'true'}),...layout.caption.map(row=>textNode(row,'middle')));
+    if(e.text&&!editing)group.append(svgElement('rect',{...layout.captionBounds,rx:3,fill:'#ffffff','data-connector-label':'true'}),...layout.caption.map(row=>textNode(row,'middle')));
   }
   private syncMarkers(board:Board){
     const wanted=new Map(board.elements.filter(e=>e.kind==='connector').map(e=>[`arrow-${e.id}`,e.stroke]));

@@ -135,6 +135,9 @@ p { line-height: 1.55; overflow-wrap: anywhere; }
 .text-editor { position: absolute; z-index: 4; inset-block-start: 0; inset-inline-start: 0; transform-origin: 0 0; display: flex; flex-direction: column; justify-content: flex-start; padding: 16px; overflow: hidden; font-family: 'Golos Text', sans-serif; font-kerning: none; font-variant-ligatures: none; color: #302b3b; outline: 2px solid var(--accent); border-radius: 5px; }
 .text-editor[data-kind='rectangle'] { justify-content: center; text-align: center; }
 .text-editor[data-kind='text'] { padding: 4px; }
+.text-editor[data-kind='frame'] { padding: 2px 0; color: #66786c; outline-offset: 2px; }
+.text-editor[data-kind='frame'] .body-field { white-space: pre; overflow: hidden; line-height: 20px; }
+.text-editor[data-kind='connector'] { padding: 6px 8px; justify-content: center; text-align: center; background: #ffffff; border-radius: 3px; }
 .text-editor textarea { display: block; flex: none; inline-size: 100%; min-block-size: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; resize: none; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; color: inherit; text-align: inherit; caret-color: var(--accent); user-select: text; -webkit-user-select: text; }
 .text-editor textarea:focus-visible { outline: none; }
 .text-editor .title-field { font-size: var(--title-size); font-weight: 600; line-height: 1.25; }
