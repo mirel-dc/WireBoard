@@ -30,9 +30,9 @@ export function growHeight(e:Element,d:TextDraft,metrics:FontMetrics):number{
   if(!GROWS.includes(e.kind))return e.height;
   return Math.min(MAX_HEIGHT,Math.max(e.height,layoutElement({...e,title:d.title,text:d.text},metrics).fitHeight));
 }
+// One update: a text change carries the grown height with it, so a remote move of the block does not conflict.
 export function textOperations(e:Element,d:TextDraft,height:number):Operation[]{
   const patch:Patch={};if(e.kind==='rectangle'&&d.title!==displayTitle(e.title))patch.title=d.title;if(d.text!==e.text)patch.text=d.text;
-  const operations:Operation[]=[];if(Object.keys(patch).length)operations.push({op:'update',id:e.id,patch});
-  if(height!==e.height)operations.push({op:'resize',id:e.id,width:e.width,height});
-  return operations;
+  if(!Object.keys(patch).length)return [];if(height!==e.height)patch.height=height;
+  return [{op:'update',id:e.id,patch}];
 }

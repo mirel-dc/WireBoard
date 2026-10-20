@@ -30,12 +30,16 @@ test('the block grows with the draft and never shrinks below its starting height
   expect(growHeight(e,{title:'',text:'слово '.repeat(5000)},metrics)).toBe(MAX_HEIGHT);
   expect(growHeight(element({id:2,kind:'image'}),{title:'',text:'Длинное описание '.repeat(20)},metrics)).toBe(112);
 });
-test('only changed fields are sent, with a resize when the block grew',()=>{
+test('one update carries the changed fields and the grown height',()=>{
   const e=element({id:3,kind:'rectangle',title:'Line\nbreak',text:'Card'});
   expect(draftOf(e)).toEqual({title:'Line break',text:'Card'});
   expect(textOperations(e,draftOf(e),112)).toEqual([]);
   expect(textOperations(e,{title:'New',text:'Card'},112)).toEqual([{op:'update',id:3,patch:{title:'New'}}]);
-  expect(textOperations(e,{title:'Line break',text:'More'},180)).toEqual([{op:'update',id:3,patch:{text:'More'}},{op:'resize',id:3,width:220,height:180}]);
+  expect(textOperations(e,{title:'Line break',text:'More'},180)).toEqual([{op:'update',id:3,patch:{text:'More',height:180}}]);
   expect(textOperations(element({id:4,kind:'text',text:'a'}),{title:'ignored',text:'a'},112)).toEqual([]);
   expect(draftOf(element({id:5,kind:'frame',text:'Слайд'}))).toEqual({title:'',text:'Слайд'});
+});
+test('an overflowing block with unchanged text sends nothing',()=>{
+  const e=element({id:6,kind:'rectangle',text:'Длинное описание '.repeat(20)});
+  expect(textOperations(e,draftOf(e),growHeight(e,draftOf(e),metrics))).toEqual([]);expect(growHeight(e,draftOf(e),metrics)).toBeGreaterThan(112);
 });

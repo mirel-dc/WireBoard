@@ -247,3 +247,11 @@ test('the_context_edit_button_opens_the_editor',async({page})=>{
   await expect(editor(page)).toBeVisible();await expect(page.locator('#text-draft')).toBeFocused();
   const e=await bounding(editor(page)),m=await modelBox(page);expect(Math.abs(e.x-m.x)+Math.abs(e.y-m.y)).toBeLessThanOrEqual(3);
 });
+test('agent_move_while_typing_does_not_block_the_grown_save',async({page})=>{
+  const id=await setup(page);const text='Длинное описание '.repeat(20);await open(page);await page.locator('#text-draft').fill(text);
+  await apply(page,id,1,[{op:'update',id:1,patch:{x:300}}]);await expect(page.locator('#status')).toContainText('черновик');
+  await page.locator('#text-draft').press('Escape');
+  await expect.poll(async()=>{const e=(await board(page,id)).elements[0];return [e.x,e.text,e.height>112];}).toEqual([300,text,true]);
+  await expect(page.locator('#text-conflict')).toBeHidden();await expect(page.locator('#operation-return')).toBeHidden();
+  await page.keyboard.press('Control+z');await expect.poll(async()=>{const e=(await board(page,id)).elements[0];return [e.x,e.text,e.height];}).toEqual([300,'Card',112]);
+});
