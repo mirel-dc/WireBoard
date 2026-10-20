@@ -168,14 +168,14 @@ test('creation reverse drag previews before commit and Undo removes one object',
 
 test('creation all kinds drag freely and Shift makes a square',async({page})=>{
   const id=await setup(page);await draw(page,'text',{x:400,y:220},{x:520,y:290});await expect.poll(async()=>(await board(page,id)).elements.length).toBe(2);
-  expect((await board(page,id)).elements[1]).toMatchObject({kind:'text',width:120,height:70});
+  expect((await board(page,id)).elements[1]).toMatchObject({kind:'text',width:120,height:70});await page.keyboard.type('Text');
   await draw(page,'frame',{x:400,y:320},{x:510,y:370},true);await expect.poll(async()=>(await board(page,id)).elements.length).toBe(3);
   expect((await board(page,id)).elements[2]).toMatchObject({kind:'frame',width:110,height:110});
 });
 
 test('creation click defaults and cancellation do not leave phantom objects',async({page})=>{
   const id=await setup(page);await page.locator('[data-tool="text"]').click();const p=await screen(page,430,260);await page.mouse.click(p.x,p.y);
-  await expect.poll(async()=>(await board(page,id)).elements.length).toBe(2);expect((await board(page,id)).elements[1]).toMatchObject({kind:'text',width:320,height:100});
+  await expect.poll(async()=>(await board(page,id)).elements.length).toBe(2);expect((await board(page,id)).elements[1]).toMatchObject({kind:'text',width:320,height:100});await page.keyboard.type('Text');
   await page.locator('[data-tool="frame"]').click();await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(p.x+90,p.y+70);await page.keyboard.press('Escape');await page.mouse.up();expect((await board(page,id)).elements).toHaveLength(2);
   await page.locator('[data-tool="rectangle"]').click();await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(p.x+90,p.y+70);await page.evaluate(()=>window.dispatchEvent(new Event('blur')));await page.mouse.up();expect((await board(page,id)).elements).toHaveLength(2);
 });

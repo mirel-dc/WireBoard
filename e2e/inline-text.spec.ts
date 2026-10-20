@@ -217,3 +217,14 @@ test('wheel_over_the_editor_and_the_conflict_bar_moves_the_canvas',async({page})
   expect(await wheel(page,{deltaY:40},'#text-conflict')).toBe(true);await expect.poll(async()=>(await camera(page)).y).toBeCloseTo(zoomed.y-40,0);
   await expect(page.locator('#text-draft')).toHaveValue('Черновик');await expect(page.locator('#text-draft')).toBeFocused();
 });
+test('an_empty_new_text_block_is_removed_on_exit',async({page})=>{
+  const id=await setup(page);await page.getByRole('button',{name:'Текст (T)',exact:true}).click();await page.locator('#canvas').click({position:{x:700,y:420}});
+  await expect(page.locator('#text-draft')).toBeFocused();await page.keyboard.press('Escape');await expect(editor(page)).toBeHidden();
+  await expect.poll(async()=>(await board(page,id)).revision).toBe(3);expect((await board(page,id)).elements.map((e:{kind:string})=>e.kind)).toEqual(['rectangle']);
+});
+test('clearing_a_text_block_deletes_it_and_undo_restores_it',async({page})=>{
+  const id=await setup(page);await apply(page,id,1,[{op:'create',element:{kind:'text',x:420,y:100,width:320,height:100,text:'Мысль'}}]);await expect(page.locator('#scene [data-id="2"]')).toBeVisible();
+  await open(page,2);await page.locator('#text-draft').fill(' \n ');await page.keyboard.press('Escape');
+  await expect.poll(async()=>(await board(page,id)).elements.map((e:{kind:string})=>e.kind)).toEqual(['rectangle']);await expect(page.locator('#undo')).toHaveAttribute('title',/Удаление объекта/);
+  await page.keyboard.press('Control+z');await expect.poll(()=>texts(page,id)).toEqual([[1,'Card'],[2,'Мысль']]);
+});

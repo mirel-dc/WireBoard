@@ -196,6 +196,8 @@ export class Editor {
   private commitText() {const d=this.draft;if(!d||this.textConflict)return;const values=this.textEditor.read();this.closeText();this.saveText(d,values);}
   private saveText(d:{id:number;board:string;base:EditState},values:TextDraft) {
     const e=d.base.board.elements.find(e=>e.id===d.id);if(!e||!this.queue||!this.view.metrics||this.board?.id!==d.board)return;
+    // A text block without text has nothing to show: leaving it empty removes the block.
+    if(e.kind==='text'&&!values.text.trim()){void this.apply([{op:'delete',ids:[e.id]}],undefined,d.base);return;}
     const operations=textOperations(e,values,growHeight(e,values,this.view.metrics));if(!operations.length)return;
     const save:TextSave={commandId:crypto.randomUUID(),id:d.id,board:d.board,draft:values};this.textSaves.set(save.commandId,save);
     this.queue.enqueue({label:'Изменение текста',operations,guards:makeGuards(d.base,operations)},()=>{this.textSaves.delete(save.commandId);this.orphanSaves.delete(save.commandId);},save.commandId)
