@@ -6,7 +6,11 @@ const editor=(page:Page)=>page.locator('#text-editor');
 async function modelBox(page:Page,id=1){return page.locator(`#scene [data-id="${id}"]`).evaluate(e=>{const g=e as unknown as SVGGraphicsElement,m=g.getScreenCTM()!,b=g.getBBox(),p=new DOMPoint(b.x,b.y).matrixTransform(m);return {x:p.x,y:p.y,width:b.width*m.a,height:b.height*m.d};});}
 async function open(page:Page,id=1){const b=await box(page,id);await page.mouse.click(b.x+35,b.y+35);await page.keyboard.press('Enter');await expect(editor(page)).toBeVisible();}
 async function camera(page:Page){return page.locator('#world').evaluate(e=>{const m=(e as SVGGElement).transform.baseVal.consolidate()!.matrix;return{x:m.e,y:m.f,zoom:m.a};});}
-async function wheel(page:Page,init:WheelEventInit){await page.locator('#canvas').evaluate(async(e,init)=>{e.dispatchEvent(new WheelEvent('wheel',{...init,bubbles:true,cancelable:true}));await new Promise<void>(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())));},init);}
+async function wheel(page:Page,init:WheelEventInit,target='#canvas'){return page.locator(target).evaluate(async(e,init)=>{const event=new WheelEvent('wheel',{...init,bubbles:true,cancelable:true});e.dispatchEvent(event);await new Promise<void>(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())));return event.defaultPrevented;},init);}
+// Holds the browser's first apply until release(), so the agent can change the board in between.
+async function holdFirstApply(page:Page,id:string){let release!:()=>void;const held=new Promise<void>(r=>{release=r;});let first=true;await page.route(`**/api/boards/${id}/apply**`,async route=>{if(first){first=false;await held;}await route.continue();});return release;}
+const fieldFocused=(page:Page)=>page.evaluate(()=>!!document.activeElement?.matches('#text-editor textarea'));
+const texts=async(page:Page,id:string)=>(await board(page,id)).elements.map((e:{id:number;text:string})=>[e.id,e.text]);
 test('double_click_edits_inside_the_block',async({page})=>{
   const id=await setup(page);const b=await box(page);await page.mouse.dblclick(b.x+35,b.y+35);
   await expect(editor(page)).toBeVisible();await expect(page.locator('#text-dialog')).toHaveCount(0);
@@ -149,4 +153,20 @@ test('editing_at_low_zoom_zooms_in_to_half',async({page})=>{
   await page.emulateMedia({reducedMotion:'reduce'});await setup(page);for(let i=0;i<7;i++)await page.locator('#zoom-out').click();
   expect((await camera(page)).zoom).toBeLessThan(.3);const small=await box(page);await page.mouse.click(small.x+small.width/2,small.y+small.height/2);await page.keyboard.press('Enter');await expect(editor(page)).toBeVisible();await expect.poll(async()=>(await camera(page)).zoom).toBeCloseTo(.5,5);
   const e=await bounding(editor(page)),b=await box(page);expect(Math.abs(e.x-b.x)+Math.abs(e.y-b.y)).toBeLessThanOrEqual(3);
+});
+test('click_on_the_editor_padding_keeps_focus_and_the_block',async({page})=>{
+  const id=await setup(page);await open(page);const e=await bounding(editor(page));await page.mouse.click(e.x+4,e.y+4);
+  await expect(page.locator('#title-draft')).toBeFocused();await page.keyboard.press('Backspace');
+  await expect(editor(page)).toBeVisible();expect(await fieldFocused(page)).toBe(true);await expect(page.locator('#text-draft')).toHaveValue('Card');
+  await page.waitForTimeout(300);expect(await texts(page,id)).toEqual([[1,'Card']]);
+});
+test('keys_after_a_canvas_click_during_a_conflict_keep_the_block',async({page})=>{
+  const id=await setup(page);await open(page);await page.locator('#text-draft').fill('Мой текст');
+  await apply(page,id,1,[{op:'update',id:1,patch:{text:'Агент'}}]);await expect(page.locator('#status')).toContainText('черновик');
+  await page.locator('#text-draft').press('Escape');await expect(page.locator('#text-conflict')).toBeVisible();
+  await page.locator('#canvas').click({position:{x:700,y:420}});await page.keyboard.press('Backspace');
+  await page.waitForTimeout(300);await expect(editor(page)).toBeVisible();await expect(page.locator('#text-conflict')).toBeVisible();
+  expect(await fieldFocused(page)).toBe(true);await expect(page.locator('#text-draft')).toHaveValue('Мой текст');expect(await texts(page,id)).toEqual([[1,'Агент']]);
+  await page.locator('#canvas').click({position:{x:700,y:420}});await page.keyboard.press('KeyT');
+  await expect(page.locator('button[data-tool="select"]')).toHaveAttribute('aria-pressed','true');expect(await fieldFocused(page)).toBe(true);await expect(page.locator('#text-draft')).toHaveValue('Мой текст');
 });

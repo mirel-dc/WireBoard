@@ -11,6 +11,7 @@ export class InlineTextEditor {
     for(const f of [this.title,this.body])f.addEventListener('input',()=>this.changed());
     this.title.addEventListener('keydown',event=>this.titleKey(event));this.body.addEventListener('keydown',event=>this.bodyKey(event));
     this.title.addEventListener('paste',event=>this.titlePaste(event));
+    this.root.addEventListener('mousedown',event=>this.padding(event));
   }
   get open(){return !this.root.hidden;}
   contains(target:EventTarget|null){return target instanceof Node&&this.root.contains(target);}
@@ -28,6 +29,11 @@ export class InlineTextEditor {
   private changed(){this.fit();this.callbacks.input(this.read());}
   private fit(){for(const f of [this.title,this.body]){f.style.blockSize='auto';f.style.blockSize=`${f.scrollHeight}px`;}}
   private apply(edit:Edit){this.title.value=edit.draft.title;this.body.value=edit.draft.text;const f=edit.caret.field==='title'?this.title:this.body;f.focus({preventScroll:true});f.setSelectionRange(edit.caret.offset,edit.caret.offset);this.changed();}
+  // A press on the padding would move focus to the page, where Backspace deletes the edited block.
+  private padding(event:MouseEvent){
+    if(event.target instanceof HTMLTextAreaElement)return;event.preventDefault();
+    const f=!this.title.hidden&&event.clientY<this.body.getBoundingClientRect().top?this.title:this.body;f.focus({preventScroll:true});f.setSelectionRange(f.value.length,f.value.length);
+  }
   private commitKey(event:KeyboardEvent){
     const commit=event.key==='Escape'||event.key==='Enter'&&(event.ctrlKey||event.metaKey||this.kind==='frame');
     if(!commit)return false;event.preventDefault();event.stopPropagation();this.callbacks.commit();return true;

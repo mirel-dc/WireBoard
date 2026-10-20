@@ -263,7 +263,12 @@ export class Editor {
   private key(event: KeyboardEvent) {
     if (this.presentation.key(event)) return;
     if (isTextTarget(document.activeElement)||event.isComposing || document.querySelector('dialog[open]')) return;
-    if (event.key === 'Escape') { this.interaction.finishNudge(true);this.comments.cancelAnchor();this.interaction.setTool('select'); if(this.draft){this.commitText();return;} this.interaction.cancel(); this.select([]); return; }
+    // Focus left the open editor (a press beside the fields, or on the canvas during a conflict): keys go back to the field, never to the canvas.
+    if(this.draft){
+      if(['Shift','Control','Alt','Meta'].includes(event.key)||el('text-conflict').contains(document.activeElement)&&['Tab','Enter',' '].includes(event.key))return;
+      event.preventDefault();if(event.key==='Escape')this.commitText();else this.textEditor.focus();return;
+    }
+    if (event.key === 'Escape') { this.interaction.finishNudge(true);this.comments.cancelAnchor();this.interaction.setTool('select'); this.interaction.cancel(); this.select([]); return; }
     if(this.board&&this.queue&&this.interaction.nudgeKey(event)){event.preventDefault();return;}
     if(!/^(Shift|Control|Meta|Alt)/.test(event.code))this.interaction.finishNudge();
     const resolved=shortcut(event);const command=event.ctrlKey||event.metaKey;
