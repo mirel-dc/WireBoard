@@ -51,4 +51,9 @@ test.describe('smoothness budget on 300 elements',()=>{
     const drag=await frames(page,async()=>{await page.mouse.move(dot.x+dot.width/2,dot.y+dot.height/2);await page.mouse.down();for(let i=1;i<=30;i++)await page.mouse.move(dot.x+dot.width/2+i*8,dot.y+dot.height/2+i*5);await page.keyboard.press('Escape');await page.mouse.up();});
     for(const [name,values]of Object.entries({hover,drag})){expect(values.length,name).toBeGreaterThan(5);expect(p90(values),name).toBeLessThanOrEqual(FRAME_BUDGET_MS);}
   });
+  test('dragging_among_neighbours_with_snapping_stays_within_the_frame_budget',async({page})=>{
+    await bigBoard(page);const b=await box(page);
+    const drag=await frames(page,async()=>{await page.mouse.move(b.x+35,b.y+35);await page.mouse.down();for(let i=1;i<=30;i++)await page.mouse.move(b.x+35+i*7,b.y+35+i*9);await expect(page.locator('[data-guide]').first()).toBeAttached();await page.keyboard.press('Escape');await page.mouse.up();});
+    expect(drag.length).toBeGreaterThan(5);expect(p90(drag)).toBeLessThanOrEqual(FRAME_BUDGET_MS);
+  });
 });
