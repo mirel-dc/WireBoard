@@ -4,6 +4,7 @@ import {isDiscreteZoom} from './camera';
 import {HANDLE_REACH,PLUS_OFFSET,PLUS_RADIUS,sidePoint} from './overlay';
 import type {Side} from './placement';
 import {connectorPreviewPoints,connectorTarget,type ConnectorEnd,type ConnectorTarget} from './anchors';
+import {SNAP_PX,snapMove,snapTargets,unionBounds,type Guide} from './snap';
 import type {Anchor,Board,EditState,Element,Kind,Operation} from './types';
 export type Tool='select'|'hand'|'comment'|Kind;
 export type ResizeHandle='n'|'ne'|'e'|'se'|'s'|'sw'|'w'|'nw';
@@ -11,7 +12,10 @@ export interface Bounds{x:number;y:number;width:number;height:number}
 interface Point{x:number;y:number}
 interface Nudge{ids:number[];base:EditState;dx:number;dy:number;held:Set<string>}
 interface Callbacks{current():Board|null;editState():EditState;busy():boolean;apply(operations:Operation[],revision?:number,base?:EditState):Promise<boolean>;create(element:Partial<Element>&{kind:Kind},base:EditState):void;select(ids:number[]):void;edit(id:number):void;comment(anchor:Anchor,clientPoint:Point):void;tool(tool:Tool):void;changed():void;addBeside(id:number,side:Side):void;addAt(id:number,side:Side,point:Point):void;connect(id:number,side:Side,target:ConnectorTarget):void;report(error:unknown):void}
-type Gesture=({type:'pan';x:number;y:number;cameraX:number;cameraY:number}|{type:'move';start:Point;ids:number[];preview:number[];board:Board;dx:number;dy:number;targets:Map<number,number|null>;base:EditState}|{type:'marquee';start:Point;end:Point;selected:number[]}|{type:'resize';start:Point;element:Element;handle:ResizeHandle;bounds:Bounds;base:EditState}|{type:'create';kind:Kind;start:Point;screen:Point;bounds:Bounds;dragged:boolean;base:EditState}|{type:'connector-end';id:number;end:ConnectorEnd;screen:Point;dragged:boolean;point:Point;target:ConnectorTarget|null;base:EditState;board:Board}|{type:'connect';source:Element;side:Side;add:boolean;screen:Point;client:Point;dragged:boolean;point:Point;target:ConnectorTarget|null;base:EditState})&{pointer:number};
+type Gesture=({type:'pan';x:number;y:number;cameraX:number;cameraY:number}|{type:'move';start:Point;ids:number[];preview:number[];board:Board;dx:number;dy:number;targets:Map<number,number|null>;base:EditState;box:Bounds|null;snap:Bounds[];client:Point}|{type:'marquee';start:Point;end:Point;selected:number[]}|{type:'resize';start:Point;element:Element;handle:ResizeHandle;bounds:Bounds;base:EditState;snap:Bounds[];client:Point;shift:boolean}|{type:'create';kind:Kind;start:Point;screen:Point;bounds:Bounds;dragged:boolean;base:EditState}|{type:'connector-end';id:number;end:ConnectorEnd;screen:Point;dragged:boolean;point:Point;target:ConnectorTarget|null;base:EditState;board:Board}|{type:'connect';source:Element;side:Side;add:boolean;screen:Point;client:Point;dragged:boolean;point:Point;target:ConnectorTarget|null;base:EditState})&{pointer:number};
+type MoveGesture=Extract<Gesture,{type:'move'}>;type ResizeGesture=Extract<Gesture,{type:'resize'}>;
+// The editor's click tolerance in screen pixels: a press that has not moved further never snaps.
+const CLICK_PX=2;
 const clamp=(v:number,min:number,max:number)=>Math.min(max,Math.max(min,v));
 // A connector that exists only while dragging: from the source's side towards the pointer.
 const wireLink=(source:Element,side:Side):Element=>({...source,id:-1,kind:'connector',from:source.id,to:source.id,fromPort:side,toPort:'auto'});
@@ -35,7 +39,7 @@ export function moveOperations(board:Board,ids:number[],dx:number,dy:number):Ope
 }
 export class Interaction {
   tool:Tool='select';gesture:Gesture|null=null;space=false;private connectorFrom:number|null=null;private downTarget:number|null=null;private previousTap:number|null=null;private doubleTap:number|null=null;
-  private nudge:Nudge|null=null;
+  private nudge:Nudge|null=null;private swallowAlt=false;
   get active(){return !!this.gesture||!!this.nudge;}
   nudgeKey(event:KeyboardEvent):boolean{
     const delta=({ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]} as Record<string,number[]>)[event.code];
@@ -56,6 +60,8 @@ export class Interaction {
     // The inline editor and its conflict bar sit above the canvas: the wheel over them still moves the camera.
     for(const target of [view.svg,document.getElementById('text-editor'),document.getElementById('text-conflict')])target?.addEventListener('wheel',e=>this.wheel(e as WheelEvent),{passive:false});
     view.svg.addEventListener('contextmenu',e=>e.preventDefault());view.svg.addEventListener('pointerleave',()=>view.setHover(null));
+    // Alt frees a move from snapping and repaints at once; the browser never sees an Alt used in a gesture (Firefox would open the window menu on release).
+    for(const type of ['keydown','keyup'] as const)window.addEventListener(type,e=>this.alt(e));
   }
   private wheel(e:WheelEvent){
     if(document.querySelector('#app')?.hasAttribute('inert')||document.querySelector('dialog[open]'))return;
@@ -81,6 +87,19 @@ export class Interaction {
     this.view.setHover(null);
   }
   private begin(g:Gesture){this.gesture=g;this.view.svg.setPointerCapture(g.pointer);}
+  // Snap targets are taken once: the wheel does not move the camera during a move or resize.
+  private targetsInView(board:Board,exclude:number[]){return snapTargets(board,exclude,this.view.visibleWorld());}
+  private dragMove(g:MoveGesture,free:boolean){
+    const point=this.view.worldPoint(g.client.x,g.client.y),z=this.view.camera.zoom;let dx=point.x-g.start.x,dy=point.y-g.start.y,guides:Guide[]=[];
+    if(!free&&g.box&&Math.hypot(dx,dy)*z>CLICK_PX){const s=snapMove({...g.box,x:g.box.x+dx,y:g.box.y+dy},g.snap,SNAP_PX/z);dx+=s.dx;dy+=s.dy;guides=s.guides;}
+    g.dx=dx;g.dy=dy;this.view.previewMove(g.preview,g.dx,g.dy);this.view.previewGuides(guides);
+    g.targets.clear();const roots=g.ids.filter(id=>{const e=g.board.elements.find(e=>e.id===id);return e&&e.kind!=='connector'&&!g.ids.some(other=>other!==id&&members(g.board,[other]).includes(id));});for(const id of roots){const e=g.board.elements.find(e=>e.id===id)!;g.targets.set(id,dropTarget(g.board,id,{x:e.x+e.width/2+g.dx,y:e.y+e.height/2+g.dy},g.preview));}this.view.highlightDrop([...g.targets.values()].find(id=>id!==null)??null);
+  }
+  private alt(e:KeyboardEvent){
+    if(e.key!=='Alt')return;const g=this.gesture;
+    if(g?.type==='move'){this.swallowAlt=e.type==='keydown';e.preventDefault();this.dragMove(g,e.altKey);return;}
+    if(e.type==='keyup'&&this.swallowAlt){this.swallowAlt=false;e.preventDefault();}
+  }
   private down(event:PointerEvent){
     // A pressed handle keeps its block hovered: clearing the hover would hide the handles or hand them to the selected block.
     const grip=(event.target as globalThis.Element).closest('[data-connect],[data-add]');this.finishNudge();if(!grip)this.view.setHover(null);
@@ -101,16 +120,16 @@ export class Interaction {
       }return;
     }
     if(this.tool==='comment'){event.preventDefault();this.callbacks.comment(target?target.kind==='connector'?{type:'connector',elementId:target.id,t:.5}:{type:'element',elementId:target.id,u:clamp((point.x-target.x)/target.width,0,1),v:clamp((point.y-target.y)/target.height,0,1)}:{type:'point',...point},{x:event.clientX,y:event.clientY});this.setTool('select');return;}
-    const handle=(event.target as globalThis.Element).closest('[data-handle]');if(handle&&this.tool==='select'){const element=board.elements.find(e=>e.id===Number(handle.getAttribute('data-resize')));if(element)this.begin({type:'resize',pointer:event.pointerId,start:point,element:structuredClone(element),handle:handle.getAttribute('data-handle') as ResizeHandle,bounds:{...element},base:this.callbacks.editState()});return;}
+    const handle=(event.target as globalThis.Element).closest('[data-handle]');if(handle&&this.tool==='select'){const element=board.elements.find(e=>e.id===Number(handle.getAttribute('data-resize')));if(element)this.begin({type:'resize',pointer:event.pointerId,start:point,element:structuredClone(element),handle:handle.getAttribute('data-handle') as ResizeHandle,bounds:{...element},base:this.callbacks.editState(),snap:this.targetsInView(board,[element.id]),client:{x:event.clientX,y:event.clientY},shift:event.shiftKey});return;}
     if(this.tool==='connector'){if(!target||target.kind==='frame'||target.kind==='connector')return;if(this.connectorFrom===null){this.connectorFrom=target.id;this.callbacks.select([target.id]);return;}if(this.connectorFrom!==target.id){void this.callbacks.apply([{op:'create',element:{kind:'connector',from:this.connectorFrom,to:target.id}}]);this.setTool('select');}return;}
     if(['rectangle','text','frame'].includes(this.tool)){const kind=this.tool as Kind;this.begin({type:'create',pointer:event.pointerId,kind,start:point,screen:{x:event.clientX,y:event.clientY},bounds:defaultBounds(kind,point),dragged:false,base:this.callbacks.editState()});return;}
     // Empty frame interiors accept marquee; titles and borders move the frame.
     if(target?.kind==='frame'){const edge=8/this.view.camera.zoom;if(point.x>target.x+edge&&point.x<target.x+target.width-edge&&point.y>target.y+edge&&point.y<target.y+target.height-edge)target=undefined;}
-    if(target){const selected=event.shiftKey?this.view.selected.includes(target.id)?this.view.selected.filter(id=>id!==target!.id):[...this.view.selected,target.id]:this.view.selected.includes(target.id)?this.view.selected:[target.id];this.callbacks.select(selected);if(target.kind!=='connector'&&selected.includes(target.id))this.begin({type:'move',pointer:event.pointerId,start:point,ids:[...selected],preview:members(board,selected),board:structuredClone(board),dx:0,dy:0,targets:new Map(),base:this.callbacks.editState()});}
+    if(target){const selected=event.shiftKey?this.view.selected.includes(target.id)?this.view.selected.filter(id=>id!==target!.id):[...this.view.selected,target.id]:this.view.selected.includes(target.id)?this.view.selected:[target.id];this.callbacks.select(selected);if(target.kind!=='connector'&&selected.includes(target.id)){const preview=members(board,selected);this.begin({type:'move',pointer:event.pointerId,start:point,ids:[...selected],preview,board:structuredClone(board),dx:0,dy:0,targets:new Map(),base:this.callbacks.editState(),box:unionBounds(board.elements.filter(e=>selected.includes(e.id)&&e.kind!=='connector')),snap:this.targetsInView(board,preview),client:{x:event.clientX,y:event.clientY}});}}
     else{const selected=event.shiftKey?[...this.view.selected]:[];if(!event.shiftKey)this.callbacks.select([]);this.begin({type:'marquee',pointer:event.pointerId,start:point,end:point,selected});}
   }
   private move(event:PointerEvent){const g=this.gesture;if(!g){this.hover(event);return;}if(g.pointer!==event.pointerId)return;if(g.type==='pan'){this.view.camera.x=g.cameraX+event.clientX-g.x;this.view.camera.y=g.cameraY+event.clientY-g.y;this.view.updateCamera();return;}const point=this.view.worldPoint(event.clientX,event.clientY);
-    if(g.type==='move'){g.dx=point.x-g.start.x;g.dy=point.y-g.start.y;this.view.previewMove(g.preview,g.dx,g.dy);g.targets.clear();const roots=g.ids.filter(id=>{const e=g.board.elements.find(e=>e.id===id);return e&&e.kind!=='connector'&&!g.ids.some(other=>other!==id&&members(g.board,[other]).includes(id));});for(const id of roots){const e=g.board.elements.find(e=>e.id===id)!;g.targets.set(id,dropTarget(g.board,id,{x:e.x+e.width/2+g.dx,y:e.y+e.height/2+g.dy},g.preview));}this.view.highlightDrop([...g.targets.values()].find(id=>id!==null)??null);}
+    if(g.type==='move'){g.client={x:event.clientX,y:event.clientY};this.dragMove(g,event.altKey);}
     else if(g.type==='marquee'){g.end=point;this.view.marquee(Math.min(g.start.x,point.x),Math.min(g.start.y,point.y),Math.abs(point.x-g.start.x),Math.abs(point.y-g.start.y));}
     else if(g.type==='connector-end'){
       g.dragged ||= Math.hypot(event.clientX-g.screen.x,event.clientY-g.screen.y)>3;g.point=point;
