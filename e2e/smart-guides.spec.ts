@@ -67,3 +67,28 @@ test('escape_clears_guides_and_one_undo_reverts_a_snapped_move',async({page})=>{
   await press(page,1,403,0);await page.mouse.up();await expect.poll(async()=>(await element(page,id,1)).x).toBe(500);
   await page.keyboard.press('Control+z');await expect.poll(async()=>(await element(page,id,1)).x).toBe(100);
 });
+// Selects card 1, holds `hold` if given, presses its resize handle and moves the pointer by (dx,dy), leaving the button down. A Shift-click would deselect the card, so the key goes down after the click.
+async function grabHandle(page:Page,handle:string,dx:number,dy:number,hold?:string){const b=await box(page,1);await page.mouse.click(b.x+35,b.y+35);const h=await bounding(page.locator(`[data-handle="${handle}"]`)),x=h.x+h.width/2,y=h.y+h.height/2;if(hold)await page.keyboard.down(hold);await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+dx,y+dy,{steps:8});}
+test('resizing_snaps_an_edge_to_a_neighbour_edge',async({page})=>{
+  const id=await setup(page);await add(page,id,[{op:'create',element:{kind:'rectangle',x:400,y:300,text:'B'}}],2);
+  await grabHandle(page,'se',77,0);await expect(guides(page,'align','x')).toHaveCount(1);await page.mouse.up();
+  await expect.poll(async()=>(await element(page,id,1)).width).toBe(300);const card=await element(page,id,1);expect([card.x,card.height]).toEqual([100,112]);
+});
+test('resizing_matches_a_neighbour_size_and_marks_both_blocks',async({page})=>{
+  const id=await setup(page);await add(page,id,[{op:'create',element:{kind:'rectangle',x:500,y:300,width:300,height:150,text:'B'}}],2);
+  await grabHandle(page,'e',77,0);await expect(guides(page,'size','x')).toHaveCount(2);await page.mouse.up();
+  await expect.poll(async()=>(await element(page,id,1)).width).toBe(300);
+});
+test('alt_and_shift_resize_without_snapping',async({page})=>{
+  const id=await setup(page);await add(page,id,[{op:'create',element:{kind:'rectangle',x:400,y:300,text:'B'}}],2);
+  await grabHandle(page,'e',77,0);await expect(guides(page,'align','x')).toHaveCount(1);await page.keyboard.down('Alt');await expect(guides(page,'align')).toHaveCount(0);await page.mouse.up();await page.keyboard.up('Alt');
+  await expect.poll(async()=>(await element(page,id,1)).width).toBe(297);
+  await page.keyboard.press('Control+z');await expect.poll(async()=>(await element(page,id,1)).width).toBe(220);
+  await grabHandle(page,'e',77,0,'Shift');await expect(guides(page,'align')).toHaveCount(0);await page.mouse.up();await page.keyboard.up('Shift');
+  await expect.poll(async()=>(await element(page,id,1)).width).toBeCloseTo(297,3);
+});
+test('pressing_a_handle_without_moving_near_a_neighbour_line_changes_nothing',async({page})=>{
+  const id=await setup(page);await add(page,id,[{op:'create',element:{kind:'rectangle',x:323,y:300,text:'B'}}],2);
+  await grabHandle(page,'e',0,0);await page.mouse.up();await page.waitForTimeout(300);
+  const doc=await board(page,id);expect(doc.revision).toBe(2);expect(doc.elements.find((e:{id:number})=>e.id===1).width).toBe(220);
+});

@@ -4,7 +4,7 @@ import {isDiscreteZoom} from './camera';
 import {HANDLE_REACH,PLUS_OFFSET,PLUS_RADIUS,sidePoint} from './overlay';
 import type {Side} from './placement';
 import {connectorPreviewPoints,connectorTarget,type ConnectorEnd,type ConnectorTarget} from './anchors';
-import {SNAP_PX,snapMove,snapTargets,unionBounds,type Guide} from './snap';
+import {SNAP_PX,snapMove,snapResize,snapTargets,unionBounds,type Guide} from './snap';
 import type {Anchor,Board,EditState,Element,Kind,Operation} from './types';
 export type Tool='select'|'hand'|'comment'|Kind;
 export type ResizeHandle='n'|'ne'|'e'|'se'|'s'|'sw'|'w'|'nw';
@@ -60,7 +60,7 @@ export class Interaction {
     // The inline editor and its conflict bar sit above the canvas: the wheel over them still moves the camera.
     for(const target of [view.svg,document.getElementById('text-editor'),document.getElementById('text-conflict')])target?.addEventListener('wheel',e=>this.wheel(e as WheelEvent),{passive:false});
     view.svg.addEventListener('contextmenu',e=>e.preventDefault());view.svg.addEventListener('pointerleave',()=>view.setHover(null));
-    // Alt frees a move from snapping and repaints at once; the browser never sees an Alt used in a gesture (Firefox would open the window menu on release).
+    // Alt frees a move or resize from snapping and repaints at once; the browser never sees an Alt used in a gesture (Firefox would open the window menu on release).
     for(const type of ['keydown','keyup'] as const)window.addEventListener(type,e=>this.alt(e));
   }
   private wheel(e:WheelEvent){
@@ -95,9 +95,15 @@ export class Interaction {
     g.dx=dx;g.dy=dy;this.view.previewMove(g.preview,g.dx,g.dy);this.view.previewGuides(guides);
     g.targets.clear();const roots=g.ids.filter(id=>{const e=g.board.elements.find(e=>e.id===id);return e&&e.kind!=='connector'&&!g.ids.some(other=>other!==id&&members(g.board,[other]).includes(id));});for(const id of roots){const e=g.board.elements.find(e=>e.id===id)!;g.targets.set(id,dropTarget(g.board,id,{x:e.x+e.width/2+g.dx,y:e.y+e.height/2+g.dy},g.preview));}this.view.highlightDrop([...g.targets.values()].find(id=>id!==null)??null);
   }
+  // Shift keeps the aspect ratio, so it resizes without snapping.
+  private dragResize(g:ResizeGesture,free:boolean){
+    const point=this.view.worldPoint(g.client.x,g.client.y),z=this.view.camera.zoom,dx=point.x-g.start.x,dy=point.y-g.start.y;let bounds=resizeBounds(g.element,g.handle,dx,dy,g.shift),guides:Guide[]=[];
+    if(!free&&!g.shift&&Math.hypot(dx,dy)*z>CLICK_PX){const s=snapResize(bounds,g.handle,g.snap,SNAP_PX/z);bounds=s.bounds;guides=s.guides;}
+    g.bounds=bounds;this.view.previewResize(g.element.id,bounds.width,bounds.height,bounds.x,bounds.y);this.view.previewGuides(guides);
+  }
   private alt(e:KeyboardEvent){
     if(e.key!=='Alt')return;const g=this.gesture;
-    if(g?.type==='move'){this.swallowAlt=e.type==='keydown';e.preventDefault();this.dragMove(g,e.altKey);return;}
+    if(g?.type==='move'||g?.type==='resize'){this.swallowAlt=e.type==='keydown';e.preventDefault();if(g.type==='move')this.dragMove(g,e.altKey);else this.dragResize(g,e.altKey);return;}
     if(e.type==='keyup'&&this.swallowAlt){this.swallowAlt=false;e.preventDefault();}
   }
   private down(event:PointerEvent){
@@ -140,7 +146,7 @@ export class Interaction {
       g.dragged ||= Math.hypot(event.clientX-g.screen.x,event.clientY-g.screen.y)>3;
       if(g.dragged){const dx=point.x-g.start.x,dy=point.y-g.start.y,side=Math.max(Math.abs(dx),Math.abs(dy)),width=clamp(event.shiftKey?side:Math.abs(dx),20,10000),height=clamp(event.shiftKey?side:Math.abs(dy),20,10000);g.bounds={x:dx<0?g.start.x-width:g.start.x,y:dy<0?g.start.y-height:g.start.y,width,height};this.view.previewCreate(g.bounds,g.kind);}
     }
-    else{g.bounds=resizeBounds(g.element,g.handle,point.x-g.start.x,point.y-g.start.y,event.shiftKey);this.view.previewResize(g.element.id,g.bounds.width,g.bounds.height,g.bounds.x,g.bounds.y);}
+    else{g.client={x:event.clientX,y:event.clientY};g.shift=event.shiftKey;this.dragResize(g,event.altKey);}
   }
   private up(event:PointerEvent){const g=this.gesture;if(!g){this.previousTap=this.downTarget;return;}if(g.pointer!==event.pointerId)return;this.move(event);this.previousTap=g.type==='move'&&Math.hypot(g.dx,g.dy)<=2/this.view.camera.zoom?this.downTarget:null;if(this.previousTap===null)this.doubleTap=null;this.gesture=null;this.view.clearPreview();this.view.highlightDrop(null);if(this.view.svg.hasPointerCapture(event.pointerId))this.view.svg.releasePointerCapture(event.pointerId);
     let ops:Operation[]=[];
