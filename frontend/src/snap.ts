@@ -48,11 +48,38 @@ function alignGuides(b:Bounds,targets:Bounds[],axis:Axis,positions:number[]):Gui
   }
   return guides;
 }
+// Blocks overlapping `b` on the cross axis form its row (axis 'x') or column (axis 'y').
+const sameRow=(a:Bounds,b:Bounds,axis:Axis)=>{const o=other(axis);return start(a,o)<end(b,o)&&start(b,o)<end(a,o);};
+interface GapSnap{delta:number;gaps:[number,number][]}
+// Equal spacing in the row: centred between the nearest neighbours, or repeating the step between a neighbour and the block beyond it.
+function gapSnap(m:Bounds,targets:Bounds[],axis:Axis,threshold:number):GapSnap|null{
+  const row=targets.filter(t=>sameRow(t,m,axis)),size=length(m,axis);
+  const before=row.filter(t=>end(t,axis)<=start(m,axis)).sort((p,q)=>end(q,axis)-end(p,axis)),after=row.filter(t=>start(t,axis)>=end(m,axis)).sort((p,q)=>start(p,axis)-start(q,axis));
+  const l=before[0],r=after[0],candidates:{at:number;gaps:(at:number)=>[number,number][]}[]=[];
+  if(l&&r){const gap=(start(r,axis)-end(l,axis)-size)/2;if(gap>=0)candidates.push({at:end(l,axis)+gap,gaps:at=>[[end(l,axis),at],[at+size,start(r,axis)]]});}
+  const l2=l?before.find(t=>end(t,axis)<=start(l,axis)):undefined;
+  if(l&&l2){const step=start(l,axis)-end(l2,axis);candidates.push({at:end(l,axis)+step,gaps:at=>[[end(l2,axis),start(l,axis)],[end(l,axis),at]]});}
+  const r2=r?after.find(t=>start(t,axis)>=end(r,axis)):undefined;
+  if(r&&r2){const step=start(r2,axis)-end(r,axis);candidates.push({at:start(r,axis)-step-size,gaps:at=>[[at+size,start(r,axis)],[end(r,axis),start(r2,axis)]]});}
+  let best:GapSnap|null=null;
+  for(const c of candidates){const delta=c.at-start(m,axis);if(Math.abs(delta)<=threshold&&(!best||Math.abs(delta)<Math.abs(best.delta)))best={delta,gaps:c.gaps(c.at)};}
+  return best;
+}
 export function snapMove(moving:Bounds,targets:Bounds[],threshold:number):MoveSnap{
-  const delta={x:0,y:0};
-  for(const axis of AXES)delta[axis]=nearest(lines(moving,axis),targets.flatMap(t=>lines(t,axis)),threshold)??0;
-  const snapped={...moving,x:moving.x+delta.x,y:moving.y+delta.y};
-  return{dx:delta.x,dy:delta.y,guides:AXES.flatMap(axis=>alignGuides(snapped,targets,axis,lines(snapped,axis)))};
+  const delta={x:0,y:0},spacing:Record<Axis,GapSnap|null>={x:null,y:null};
+  for(const axis of AXES){
+    const align=nearest(lines(moving,axis),targets.flatMap(t=>lines(t,axis)),threshold),gap=gapSnap(moving,targets,axis,threshold);
+    // Alignment wins a tie.
+    if(align!==null&&(!gap||Math.abs(align)<=Math.abs(gap.delta)))delta[axis]=align;
+    else if(gap){delta[axis]=gap.delta;spacing[axis]=gap;}
+  }
+  const snapped={...moving,x:moving.x+delta.x,y:moving.y+delta.y},guides:Guide[]=[];
+  for(const axis of AXES){
+    guides.push(...alignGuides(snapped,targets,axis,lines(snapped,axis)));
+    const o=other(axis),at=start(snapped,o)+length(snapped,o)/2;
+    for(const [from,to] of spacing[axis]?.gaps??[])guides.push({type:'gap',axis,start:from,end:to,at});
+  }
+  return{dx:delta.x,dy:delta.y,guides};
 }
 // Only the dragged edges snap: to target edges and centres, or so that the size matches a target; the nearer one wins, an edge on a tie.
 export function snapResize(bounds:Bounds,handle:ResizeHandle,targets:Bounds[],threshold:number):ResizeSnap{

@@ -49,3 +49,33 @@ test('a resize with nothing near keeps its bounds and draws nothing',()=>{
   const s=snapResize(b(100,100,250,112),'e',[b(500,300,300,150)],6);
   expect(s).toEqual({bounds:b(100,100,250,112),guides:[]});
 });
+test('a block between two neighbours snaps to equal gaps',()=>{
+  const s=snapMove(b(403,100),[b(100,100),b(700,100)],6);
+  expect(s.dx).toBe(-3);
+  expect(s.guides.filter(g=>g.type==='gap')).toEqual([{type:'gap',axis:'x',start:320,end:400,at:156},{type:'gap',axis:'x',start:620,end:700,at:156}]);
+});
+test('a block repeats the step of its row on either side',()=>{
+  const left=snapMove(b(703,100),[b(100,100),b(400,100)],6);
+  expect(left.dx).toBe(-3);
+  expect(left.guides.filter(g=>g.type==='gap')).toEqual([{type:'gap',axis:'x',start:320,end:400,at:156},{type:'gap',axis:'x',start:620,end:700,at:156}]);
+  expect(snapMove(b(97,100),[b(400,100),b(700,100)],6).dx).toBe(3);
+});
+test('equal gaps work in columns too',()=>{
+  const s=snapMove(b(100,295),[b(100,100),b(100,500)],6);
+  expect(s.dy).toBe(5);
+  expect(s.guides.filter(g=>g.type==='gap')).toEqual([{type:'gap',axis:'y',start:212,end:300,at:210},{type:'gap',axis:'y',start:412,end:500,at:210}]);
+});
+test('alignment wins a tie with equal gaps',()=>{
+  const s=snapMove(b(403,100),[b(100,100),b(700,100),b(400,400,300)],6);
+  expect(s.dx).toBe(-3);
+  expect(s.guides.some(g=>g.type==='gap')).toBe(false);
+  expect(s.guides).toContainEqual({type:'align',axis:'x',at:400,from:100,to:512});
+});
+test('a nearer equal gap beats a farther alignment',()=>{
+  const s=snapMove(b(402,100),[b(100,100),b(700,100),b(397,400,300)],6);
+  expect(s.dx).toBe(-2);
+  expect(s.guides.filter(g=>g.type==='gap')).toHaveLength(2);
+});
+test('blocks outside the row do not count for gaps',()=>{
+  expect(snapMove(b(403,100),[b(100,400),b(700,400)],6).dx).toBe(0);
+});
