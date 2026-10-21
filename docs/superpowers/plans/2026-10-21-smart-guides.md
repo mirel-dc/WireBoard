@@ -649,8 +649,8 @@ git commit -m "test: budget snapping and record stage 3 results"
 
 ## Результаты
 
-Бюджет кадра при перетаскивании среди соседей с привязкой (chromium, 300 элементов, три прогона подряд, `--repeat-each=3`): p90 равен 2.70, 2.50 и 2.40 мс при бюджете `FRAME_BUDGET_MS`; 3 из 3 прошли, бюджет не менялся.
-Playwright (`npx playwright test`, 691 тест, 24.2 мин): всего 678 passed, 13 skipped, 0 failed; по проектам unit 52 passed, chromium 213 passed, firefox 207 passed и 6 skipped, webkit 206 passed и 7 skipped.
+Бюджет кадра при перетаскивании среди соседей с привязкой (chromium, 300 элементов, три прогона подряд, `--repeat-each=3`): p90 равен 2.70, 2.50 и 2.40 мс при бюджете `FRAME_BUDGET_MS` (16 мс); 3 из 3 прошли, бюджет не менялся.
+Playwright (`npx playwright test`, 702 теста, 18.5 мин, после финальных исправлений ревью): всего 689 passed, 13 skipped, 0 failed; по проектам unit 54 passed, chromium 216 passed, firefox 210 passed и 6 skipped, webkit 209 passed и 7 skipped.
 Пропуски заданы в самих тестах: бюджеты `perf.spec.ts` (5 тестов) откалиброваны только под Chromium, поэтому пропускаются в firefox и webkit; `real_browser_zoom_200_percent` идёт только в chromium; один тест `ux-actions.spec.ts` пропускается в webkit из-за буфера обмена Playwright WebKit на Windows.
 `cargo test`: 98 passed, 0 failed. `npm run typecheck` и `npm run build` без ошибок.
 Красных прогонов по дороге не было, повторных запусков не требовалось.
