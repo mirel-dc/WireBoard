@@ -113,3 +113,15 @@ test('moving_snaps_to_a_neighbour_at_zoom_half',async({page})=>{
   await press(page,1,296,0);await expect(guides(page,'align','x')).toHaveCount(1);await page.mouse.up();
   await expect.poll(async()=>(await element(page,id,1)).x).toBe(700);expect((await element(page,id,1)).y).toBe(100);
 });
+// At zoom 2 the snap threshold is 3 world units: 4 units off stays free.
+test('at_zoom_2_a_block_four_units_off_does_not_snap',async({page})=>{
+  const id=await setup(page);await add(page,id,[{op:'create',element:{kind:'rectangle',x:300,y:250,width:300,height:112,text:'B'}}],2);await zoomTo(page,id,2);
+  await press(page,1,392,0);await expect(guides(page,'align')).toHaveCount(0);await page.mouse.up();
+  await expect.poll(async()=>(await element(page,id,1)).x).toBe(296);
+});
+// At zoom 2 a 3 px press is 1.5 world units: past the 2 px click tolerance, so it snaps and commits.
+test('at_zoom_2_a_three_pixel_press_snaps_and_commits',async({page})=>{
+  const id=await setup(page);await add(page,id,[{op:'create',element:{kind:'rectangle',x:103,y:250,width:300,height:112,text:'B'}}],2);await zoomTo(page,id,2);
+  await press(page,1,3,0);await expect(guides(page,'align','x')).toHaveCount(1);await page.mouse.up();
+  await expect.poll(async()=>(await element(page,id,1)).x).toBe(103);
+});
