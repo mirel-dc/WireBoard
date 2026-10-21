@@ -79,3 +79,15 @@ test('a nearer equal gap beats a farther alignment',()=>{
 test('blocks outside the row do not count for gaps',()=>{
   expect(snapMove(b(403,100),[b(100,400),b(700,400)],6).dx).toBe(0);
 });
+test('a snapped move lands exactly on the target coordinate',()=>{
+  // 350 + (-91.10282939385681 + (254 - 258.89717060614316)) is 254.00000000000003 in doubles.
+  const box=b(350,100),dx=-91.10282939385681,s=snapMove({...box,x:box.x+dx},[b(254,400,300)],6);
+  expect(box.x+(dx+s.dx)).not.toBe(254);
+  expect(s.x).toBe(254);
+  expect(box.x+(s.x!-box.x)).toBe(254);
+});
+test('a snapped resize puts the dragged edge exactly on the target coordinate',()=>{
+  // 121 + (391.4031227762426 + (508 - 512.4031227762426)) is 508.00000000000006 in doubles.
+  const s=snapResize(b(121,100,391.4031227762426),'e',[b(208,400,300)],6);
+  expect(s.bounds.x+s.bounds.width).toBe(508);
+});

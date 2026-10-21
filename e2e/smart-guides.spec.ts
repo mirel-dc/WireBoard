@@ -92,3 +92,24 @@ test('pressing_a_handle_without_moving_near_a_neighbour_line_changes_nothing',as
   await grabHandle(page,'e',0,0);await page.mouse.up();await page.waitForTimeout(300);
   const doc=await board(page,id);expect(doc.revision).toBe(2);expect(doc.elements.find((e:{id:number})=>e.id===1).width).toBe(220);
 });
+// Reloads the board with a saved camera, so the zoom is exact, and returns the zoom the page reached.
+async function zoomTo(page:Page,id:string,zoom:number){
+  await page.addInitScript(([id,zoom])=>localStorage.setItem(`wireboard:view:${id}`,JSON.stringify({camera:{x:0,y:0,zoom},selected:[]})),[id,zoom] as [string,number]);await page.reload();
+  await expect(page.locator('#canvas')).toHaveAttribute('data-board',id);await expect(page.locator('#scene [data-id="2"]')).toBeVisible();
+  const reached=await page.locator('#world').evaluate(e=>(e as SVGGElement).transform.baseVal.consolidate()!.matrix.a);expect(reached).toBe(zoom);
+}
+test('a_small_snap_after_a_real_drag_is_committed',async({page})=>{
+  const id=await setup(page);await add(page,id,[{op:'create',element:{kind:'rectangle',x:98,y:400,width:300,height:112,text:'B'}}],2);
+  await press(page,1,3,0);await expect(guides(page,'align','x')).toHaveCount(1);await page.mouse.up();
+  await expect.poll(async()=>(await element(page,id,1)).x).toBe(98);expect((await board(page,id)).revision).toBe(3);
+});
+test('moving_snaps_to_a_neighbour_at_zoom_2',async({page})=>{
+  const id=await setup(page);await add(page,id,[{op:'create',element:{kind:'rectangle',x:300,y:250,width:300,height:112,text:'B'}}],2);await zoomTo(page,id,2);
+  await press(page,1,396,0);await expect(guides(page,'align','x')).toHaveCount(1);await page.mouse.up();
+  await expect.poll(async()=>(await element(page,id,1)).x).toBe(300);expect((await element(page,id,1)).y).toBe(100);
+});
+test('moving_snaps_to_a_neighbour_at_zoom_half',async({page})=>{
+  const id=await setup(page);await add(page,id,[{op:'create',element:{kind:'rectangle',x:700,y:300,width:300,height:112,text:'B'}}],2);await zoomTo(page,id,.5);
+  await press(page,1,296,0);await expect(guides(page,'align','x')).toHaveCount(1);await page.mouse.up();
+  await expect.poll(async()=>(await element(page,id,1)).x).toBe(700);expect((await element(page,id,1)).y).toBe(100);
+});
