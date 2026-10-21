@@ -1,16 +1,20 @@
 import {CanvasView,members} from './canvas';
 import {wheelIntent} from './navigation';
 import {isDiscreteZoom} from './camera';
-import {connectorTarget,type ConnectorEnd,type ConnectorTarget} from './anchors';
+import {HANDLE_REACH,PLUS_OFFSET,PLUS_RADIUS,sidePoint} from './overlay';
+import type {Side} from './placement';
+import {connectorPreviewPoints,connectorTarget,type ConnectorEnd,type ConnectorTarget} from './anchors';
 import type {Anchor,Board,EditState,Element,Kind,Operation} from './types';
 export type Tool='select'|'hand'|'comment'|Kind;
 export type ResizeHandle='n'|'ne'|'e'|'se'|'s'|'sw'|'w'|'nw';
 export interface Bounds{x:number;y:number;width:number;height:number}
 interface Point{x:number;y:number}
 interface Nudge{ids:number[];base:EditState;dx:number;dy:number;held:Set<string>}
-interface Callbacks{current():Board|null;editState():EditState;busy():boolean;apply(operations:Operation[],revision?:number,base?:EditState):Promise<boolean>;create(element:Partial<Element>&{kind:Kind},base:EditState):void;select(ids:number[]):void;edit(id:number):void;comment(anchor:Anchor,clientPoint:Point):void;tool(tool:Tool):void;changed():void;report(error:unknown):void}
-type Gesture=({type:'pan';x:number;y:number;cameraX:number;cameraY:number}|{type:'move';start:Point;ids:number[];preview:number[];board:Board;dx:number;dy:number;targets:Map<number,number|null>;base:EditState}|{type:'marquee';start:Point;end:Point;selected:number[]}|{type:'resize';start:Point;element:Element;handle:ResizeHandle;bounds:Bounds;base:EditState}|{type:'create';kind:Kind;start:Point;screen:Point;bounds:Bounds;dragged:boolean;base:EditState}|{type:'connector-end';id:number;end:ConnectorEnd;screen:Point;dragged:boolean;point:Point;target:ConnectorTarget|null;base:EditState;board:Board})&{pointer:number};
+interface Callbacks{current():Board|null;editState():EditState;busy():boolean;apply(operations:Operation[],revision?:number,base?:EditState):Promise<boolean>;create(element:Partial<Element>&{kind:Kind},base:EditState):void;select(ids:number[]):void;edit(id:number):void;comment(anchor:Anchor,clientPoint:Point):void;tool(tool:Tool):void;changed():void;addBeside(id:number,side:Side):void;addAt(id:number,side:Side,point:Point):void;connect(id:number,side:Side,target:ConnectorTarget):void;report(error:unknown):void}
+type Gesture=({type:'pan';x:number;y:number;cameraX:number;cameraY:number}|{type:'move';start:Point;ids:number[];preview:number[];board:Board;dx:number;dy:number;targets:Map<number,number|null>;base:EditState}|{type:'marquee';start:Point;end:Point;selected:number[]}|{type:'resize';start:Point;element:Element;handle:ResizeHandle;bounds:Bounds;base:EditState}|{type:'create';kind:Kind;start:Point;screen:Point;bounds:Bounds;dragged:boolean;base:EditState}|{type:'connector-end';id:number;end:ConnectorEnd;screen:Point;dragged:boolean;point:Point;target:ConnectorTarget|null;base:EditState;board:Board}|{type:'connect';source:Element;side:Side;add:boolean;screen:Point;client:Point;dragged:boolean;point:Point;target:ConnectorTarget|null;base:EditState})&{pointer:number};
 const clamp=(v:number,min:number,max:number)=>Math.min(max,Math.max(min,v));
+// A connector that exists only while dragging: from the source's side towards the pointer.
+const wireLink=(source:Element,side:Side):Element=>({...source,id:-1,kind:'connector',from:source.id,to:source.id,fromPort:side,toPort:'auto'});
 function defaultBounds(kind:Kind,center:Point):Bounds{const width=kind==='frame'?600:kind==='text'?320:220,height=kind==='frame'?360:kind==='text'?100:112;return{x:center.x-width/2,y:center.y-height/2,width,height};}
 export function resizeBounds(start:Bounds,handle:ResizeHandle,dx:number,dy:number,keepAspect:boolean):Bounds {
   const west=handle.includes('w'),east=handle.includes('e'),north=handle.includes('n'),south=handle.includes('s');
@@ -55,18 +59,39 @@ export class Interaction {
   }
   private wheel(e:WheelEvent){
     if(document.querySelector('#app')?.hasAttribute('inert')||document.querySelector('dialog[open]'))return;
-    e.preventDefault();if(this.gesture)return;
+    e.preventDefault();if(this.gesture&&this.gesture.type!=='connect')return;
     const view=this.view,rect=view.svg.getBoundingClientRect(),intent=wheelIntent(e,rect);if(!intent)return;
     this.finishNudge();if(intent.type==='zoom'){if(isDiscreteZoom(e))view.animateZoom(intent.factor,e.clientX,e.clientY);else view.zoom(intent.factor,e.clientX,e.clientY);}else view.pan(intent.dx,intent.dy);
+    const g=this.gesture;if(g?.type==='connect'&&g.dragged){g.point=view.worldPoint(g.client.x,g.client.y);this.previewConnect(g);}
   }
-  setTool(tool:Tool){if(this.gesture?.type==='connector-end')this.cancel();this.tool=tool;this.connectorFrom=null;this.view.svg.dataset.tool=tool;this.callbacks.tool(tool);}
-  private hover(event:PointerEvent){const target=this.tool==='select'&&!this.space?this.view.elementAt(event.target):undefined;this.view.setHover(target&&target.kind!=='connector'&&target.kind!=='frame'?target.id:null);}
+  private previewConnect(g:Extract<Gesture,{type:'connect'}>){
+    const board=g.base.board,link=wireLink(g.source,g.side);g.target=connectorTarget(board,link,'to',g.point,this.view.camera.zoom);
+    const points=connectorPreviewPoints(board,link,'to',g.point,g.target),target=g.target?board.elements.find(e=>e.id===g.target!.id):undefined;
+    this.view.previewWire(points,target&&points.length?{element:this.view.project(target),port:points.at(-1)!}:null);
+  }
+  cancelConnecting(){const type=this.gesture?.type;if(type==='connector-end'||type==='connect')this.cancel();}
+  // Handles show only under the select tool, so a tool change repaints the overlay.
+  setTool(tool:Tool){this.cancelConnecting();this.tool=tool;this.connectorFrom=null;this.view.svg.dataset.tool=tool;this.view.frames.invalidate('overlay');this.callbacks.tool(tool);}
+  private hover(event:PointerEvent){
+    if(this.tool!=='select'||this.space){this.view.setHover(null);return;}
+    const target=this.view.elementAt(event.target);if(target&&target.kind!=='connector'&&target.kind!=='frame'){this.view.setHover(target.id);return;}
+    // The handles sit outside the block: keep its hover while the pointer travels to them across empty space or a parent frame.
+    const current=this.view.hovered(),point=this.view.worldPoint(event.clientX,event.clientY),reach=HANDLE_REACH/this.view.camera.zoom;
+    if(current&&point.x>=current.x-reach&&point.x<=current.x+current.width+reach&&point.y>=current.y-reach&&point.y<=current.y+current.height+reach)return;
+    this.view.setHover(null);
+  }
   private begin(g:Gesture){this.gesture=g;this.view.svg.setPointerCapture(g.pointer);}
   private down(event:PointerEvent){
-    this.finishNudge();this.view.setHover(null);
+    // A pressed handle keeps its block hovered: clearing the hover would hide the handles or hand them to the selected block.
+    const grip=(event.target as globalThis.Element).closest('[data-connect],[data-add]');this.finishNudge();if(!grip)this.view.setHover(null);
     const board=this.callbacks.current();if(!board||this.gesture)return;const point=this.view.worldPoint(event.clientX,event.clientY);let target=this.view.elementAt(event.target);this.downTarget=target?.id??null;this.doubleTap=this.downTarget!==null&&this.downTarget===this.previousTap?this.downTarget:null;this.view.svg.focus();
     if(this.tool==='hand'||this.space||event.button===1){this.view.stopZoom();this.begin({type:'pan',pointer:event.pointerId,x:event.clientX,y:event.clientY,cameraX:this.view.camera.x,cameraY:this.view.camera.y});event.preventDefault();return;}
     if(this.callbacks.busy()||event.button!==0)return;
+    if(grip&&this.tool==='select'){
+      const base=this.callbacks.editState(),id=Number(grip.getAttribute('data-connect')??grip.getAttribute('data-add')),source=base.board.elements.find(e=>e.id===id);
+      if(source){this.begin({type:'connect',pointer:event.pointerId,source:structuredClone(source),side:grip.getAttribute('data-side') as Side,add:grip.hasAttribute('data-add'),screen:{x:event.clientX,y:event.clientY},client:{x:event.clientX,y:event.clientY},dragged:false,point,target:null,base});event.preventDefault();}
+      return;
+    }
     const endpoint=(event.target as globalThis.Element).closest('[data-connector-end]');
     if(endpoint&&this.tool==='select'){
       const base=this.callbacks.editState(),id=Number(endpoint.getAttribute('data-connector-end')),end=endpoint.getAttribute('data-end') as ConnectorEnd,link=base.board.elements.find(e=>e.id===id);
@@ -91,6 +116,7 @@ export class Interaction {
       g.dragged ||= Math.hypot(event.clientX-g.screen.x,event.clientY-g.screen.y)>3;g.point=point;
       if(g.dragged){g.target=connectorTarget(g.board,g.board.elements.find(e=>e.id===g.id)!,g.end,point,this.view.camera.zoom);this.view.previewConnector(g.board,g.id,g.end,point,g.target);}
     }
+    else if(g.type==='connect'){g.dragged ||= Math.hypot(event.clientX-g.screen.x,event.clientY-g.screen.y)>4;g.point=point;g.client={x:event.clientX,y:event.clientY};if(g.dragged)this.previewConnect(g);}
     else if(g.type==='create'){
       g.dragged ||= Math.hypot(event.clientX-g.screen.x,event.clientY-g.screen.y)>3;
       if(g.dragged){const dx=point.x-g.start.x,dy=point.y-g.start.y,side=Math.max(Math.abs(dx),Math.abs(dy)),width=clamp(event.shiftKey?side:Math.abs(dx),20,10000),height=clamp(event.shiftKey?side:Math.abs(dy),20,10000);g.bounds={x:dx<0?g.start.x-width:g.start.x,y:dy<0?g.start.y-height:g.start.y,width,height};this.view.previewCreate(g.bounds,g.kind);}
@@ -100,6 +126,12 @@ export class Interaction {
   private up(event:PointerEvent){const g=this.gesture;if(!g){this.previousTap=this.downTarget;return;}if(g.pointer!==event.pointerId)return;this.move(event);this.previousTap=g.type==='move'&&Math.hypot(g.dx,g.dy)<=2/this.view.camera.zoom?this.downTarget:null;if(this.previousTap===null)this.doubleTap=null;this.gesture=null;this.view.clearPreview();this.view.highlightDrop(null);if(this.view.svg.hasPointerCapture(event.pointerId))this.view.svg.releasePointerCapture(event.pointerId);
     let ops:Operation[]=[];
     if(g.type==='connector-end'&&g.dragged&&g.target){const link=g.base.board.elements.find(e=>e.id===g.id)!;if(link[g.end]!==g.target.id||link[`${g.end}Port`]!==g.target.port)ops=[{op:'update',id:g.id,patch:{[g.end]:g.target.id,[`${g.end}Port`]:g.target.port}}];}
+    if(g.type==='connect'){
+      const s=g.source,z=this.view.camera.zoom,halo=12/z,onSource=g.point.x>=s.x-halo&&g.point.x<=s.x+s.width+halo&&g.point.y>=s.y-halo&&g.point.y<=s.y+s.height+halo;
+      // A press on "+" that slips but is released over the same "+" is still a click, not a drop next to the source.
+      const plus=g.add?sidePoint(s,g.side,PLUS_OFFSET,z):null,slipped=!!plus&&Math.hypot(g.point.x-plus.x,g.point.y-plus.y)*z<=PLUS_RADIUS;
+      if(!g.dragged||slipped){if(g.add)this.callbacks.addBeside(s.id,g.side);}else if(g.target)this.callbacks.connect(s.id,g.side,g.target);else if(!onSource)this.callbacks.addAt(s.id,g.side,g.point);
+    }
     if(g.type==='create'){const kind=g.kind;this.callbacks.create({id:g.base.board.nextId,kind,...g.bounds,text:kind==='frame'?'Новый фрейм':'',title:'',fill:kind==='frame'?'#ffffff':'#eee5f8',stroke:'#ae91c5',fontSize:16},g.base);this.setTool('select');}
     if(g.type==='move'&&Math.hypot(g.dx,g.dy)>2/this.view.camera.zoom)ops=moveOperations(g.board,g.ids,g.dx,g.dy);
     else if(g.type==='resize'){const e=g.element,b=g.bounds;if(b.x!==e.x||b.y!==e.y||b.width!==e.width||b.height!==e.height)ops=[{op:'update',id:e.id,patch:{x:b.x,y:b.y}},{op:'resize',id:e.id,width:b.width,height:b.height}];}

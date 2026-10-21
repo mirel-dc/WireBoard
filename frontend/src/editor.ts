@@ -7,11 +7,13 @@ import {MIN_EDIT_ZOOM,draftOf,growHeight,textOperations,type TextDraft} from './
 import { installIcons } from './icons';
 import { api, ApiError } from './api';
 import { CanvasView, orderedFrames } from './canvas';
+import {addOperations,besideBounds,dropBounds,oppositeSide,type Side} from './placement';
+import type {ConnectorTarget} from './anchors';
 import { Interaction, type Tool } from './interaction';
 import { showBoards, showProperties } from './panels';
 import { SlideList } from './slides';
 import { Presentation } from './presentation';
-import type { Board, BoardEvent, BoardSummary, CommentOperation, Operation,Actor,EditState,Element as BoardElement } from './types';
+import type { Board, Bounds, BoardEvent, BoardSummary, CommentOperation, Operation,Actor,EditState,Element as BoardElement } from './types';
 function browserActor():Actor {let id:string=crypto.randomUUID();try{const saved=localStorage.getItem('wireboard:actorId');if(saved&&saved.length<=128)id=saved;else localStorage.setItem('wireboard:actorId',id);}catch{}return {id,source:'user'};}
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const DELETED_TEXT='Объект удалён другим клиентом, текст не сохранён.';
@@ -29,7 +31,7 @@ export class Editor {
   textEditor = new InlineTextEditor({input:draft=>this.textInput(draft),commit:()=>this.commitText()});
   slides = new SlideList(el('slides'), el('slide-count'), id => { this.select([id]); this.view.fit(id); });private panelKey='';
   comments = new Comments(this.view, {current:()=>this.board,commit:(board,ops,revision)=>this.commitComments(board,ops,revision),report:error=>this.report(error),confirm:async()=>{if(this.queue?.mode==='uncertain')await this.queue.retry();else if(this.queue?.mode==='conflict')this.discard();},anchorMode:()=>this.interaction.setTool('comment')});
-  interaction = new Interaction(this.view, { current: () => this.board, editState:()=>this.queue!.projectedState(), busy: () => this.opening || !!this.draft, apply: (ops, revision, base) => this.apply(ops, revision, base), create:(element,base)=>{this.createObjects([{op:'create',element}],[base.board.nextId],base,'Создание объекта');this.editText(base.board.nextId,element.kind==='frame');},select: ids => this.select(ids), edit: id => this.editText(id), comment: (anchor, point) => this.comments.place(anchor, point), tool: tool => this.tool(tool), changed: () => { if (this.queued) void this.refresh(); }, report: error => this.report(error) });
+  interaction = new Interaction(this.view, { current: () => this.board, editState:()=>this.queue!.projectedState(), busy: () => this.opening || !!this.draft, apply: (ops, revision, base) => this.apply(ops, revision, base), create:(element,base)=>{this.createObjects([{op:'create',element}],[base.board.nextId],base,'Создание объекта');this.editText(base.board.nextId,element.kind==='frame');},addBeside:(id,side)=>this.addBeside(id,side),addAt:(id,side,point)=>this.addAt(id,side,point),connect:(id,side,target)=>this.connectBlocks(id,side,target),select: ids => this.select(ids), edit: id => this.editText(id), comment: (anchor, point) => this.comments.place(anchor, point), tool: tool => this.tool(tool), changed: () => { if (this.queued) void this.refresh(); }, report: error => this.report(error) });
   presentation = new Presentation(error => this.report(error));
   constructor() {
     this.view.onCamera = () => { el('zoom-value').textContent = `${Math.round(this.view.camera.zoom * 100)}%`; this.scheduleSaveView(); };
@@ -92,6 +94,23 @@ export class Editor {
     if(!(error instanceof ApiError)||['connection','persistence','request'].includes(error.code))return;
     for(const [commandId,save] of this.textSaves)if(ids.includes(save.id)){this.textSaves.delete(commandId);this.orphanSaves.add(commandId);}
     if(this.draft&&ids.includes(this.draft.id)){this.closeText();this.promptOperation();}
+  }
+  private addBeside(id:number,side:Side){
+    const base=this.queue?.projectedState(),source=base?.board.elements.find(e=>e.id===id);if(!base||!source||this.opening)return;
+    const others=base.board.elements.filter(e=>e.id!==id&&e.kind!=='frame'&&e.kind!=='connector');
+    this.addBlock(base,source,besideBounds(source,side,others),side,oppositeSide(side));
+  }
+  // One command creates the block and its connector, so a single undo removes both.
+  private addBlock(base:EditState,source:BoardElement,bounds:Bounds,fromPort:Side,toPort:Side){
+    const id=base.board.nextId;this.createObjects(addOperations(source,bounds,fromPort,toPort,id),[id],base,'Новый блок со связью');this.view.revealBounds(bounds);this.editText(id);
+  }
+  private addAt(id:number,fromSide:Side,point:{x:number;y:number}){
+    const base=this.queue?.projectedState(),source=base?.board.elements.find(e=>e.id===id);if(!base||!source||this.opening)return;
+    const drop=dropBounds(source,point);this.addBlock(base,source,drop.bounds,fromSide,oppositeSide(drop.side));
+  }
+  private connectBlocks(id:number,side:Side,target:ConnectorTarget){
+    const base=this.queue?.projectedState();if(!base||this.opening||!base.board.elements.some(e=>e.id===id)||!base.board.elements.some(e=>e.id===target.id))return;
+    const linkId=base.board.nextId;this.createObjects([{op:'create',element:{id:linkId,kind:'connector',from:id,to:target.id,fromPort:side,toPort:target.port}}],[linkId],base,'Новая связь');
   }
   private clipboardAllowed(){return !!this.board&&!!this.queue&&!this.opening&&!this.draft&&!this.presentation.active&&!isTextTarget(document.activeElement)&&!document.querySelector('dialog[open]')&&!this.interaction.gesture;}
   private copy(event:ClipboardEvent){
@@ -176,7 +195,7 @@ export class Editor {
   }
   private openText(e:BoardElement,draft:TextDraft,selectAll=false) {
     this.view.setEditing(e.id);this.textEditor.show(e,draft,selectAll);this.positionText();
-    // Text scaled below half size is unreadable; zoom around the block so it stays under the cursor.
+    // Text scaled below half size is unreadable; zoom around the block's centre.
     const zoom=this.view.camera.zoom,box=this.view.textBox(e.id);
     if(zoom<MIN_EDIT_ZOOM&&box){const rect=this.view.svg.getBoundingClientRect();this.view.animateZoom(MIN_EDIT_ZOOM/zoom,rect.x+this.view.camera.x+(box.x+box.width/2)*zoom,rect.y+this.view.camera.y+(box.y+box.height/2)*zoom);}
   }
@@ -243,13 +262,13 @@ export class Editor {
     const overflow=e?this.view.scene.querySelector(`[data-id="${e.id}"] [data-text-overflow="true"]`):null;
     el('context-fit').classList.toggle('needs-fit',!!overflow);
   }
-  private history(direction:'undo'|'redo') {this.interaction.finishNudge();if(this.interaction.gesture?.type==='connector-end')this.interaction.cancel();if(this.queue&&!this.draft&&!this.opening)this.queue.history(direction);}
+  private history(direction:'undo'|'redo') {this.interaction.finishNudge();this.interaction.cancelConnecting();if(this.queue&&!this.draft&&!this.opening)this.queue.history(direction);}
   private async image(file: File) { if (!this.board) return; if (file.size > 8 * 1024 * 1024 || !['image/png','image/jpeg','image/webp'].includes(file.type)) { this.report(new Error('Выберите PNG/JPEG/WebP до 8 MiB.')); return; } try { const data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file); }); const bitmap = await createImageBitmap(file); const width = Math.min(400, Math.max(20, bitmap.width)), height = Math.min(10000, Math.max(20, width * bitmap.height / bitmap.width)); bitmap.close(); const rect = this.view.svg.getBoundingClientRect(); const point = this.view.worldPoint(rect.x + rect.width / 2, rect.y + rect.height / 2); await this.apply([{ op: 'create', element: { kind: 'image', x: point.x - width / 2, y: point.y - height / 2, width, height, image: data } }]); } catch (error) { this.report(error); } }
   private async download(format: 'json' | 'svg' | 'png') { if (!this.board) return; try { const frame = el<HTMLInputElement>('export-frame').checked ? this.board.elements.find(e => this.view.selected.includes(e.id) && e.kind === 'frame')?.id : undefined; if (el<HTMLInputElement>('export-frame').checked && frame === undefined) throw new Error('Сначала выберите слайд.'); const blob = format === 'json' ? new Blob([JSON.stringify(await api.getBoard(this.board.id), null, 2)], { type: 'application/json' }) : await api.download(this.board.id, format, frame); const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = `wireboard-${this.board.id}.${format}`; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); } catch (error) { this.report(error); } }
   private bind() {
     document.addEventListener('pointerdown',event=>{this.interaction.finishNudge();if(this.draft&&!this.textEditor.contains(event.target)&&!el('text-conflict').contains(event.target as Node))this.commitText();},true);
     this.textEditor.root.addEventListener('focusout',event=>{const next=event.relatedTarget;if(next instanceof Node&&!this.textEditor.contains(next)&&!el('text-conflict').contains(next))this.commitText();});el('text-replace').onclick=()=>{void this.replaceText();};el('text-discard').onclick=()=>this.cancelText();
-    document.addEventListener('focusin',event=>{if(isTextTarget(event.target))this.interaction.finishNudge();if(event.target!==this.view.svg&&this.interaction.gesture?.type==='connector-end')this.interaction.cancel();});
+    document.addEventListener('focusin',event=>{if(isTextTarget(event.target))this.interaction.finishNudge();if(event.target!==this.view.svg)this.interaction.cancelConnecting();});
     el('context-edit').onclick=()=>{if(this.view.selected.length===1)this.editText(this.view.selected[0]);};
     el('context-comment').onclick=()=>{const e=this.board?.elements.find(e=>e.id===this.view.selected[0]);if(e)this.comments.place(e.kind==='connector'?{type:'connector',elementId:e.id,t:.5}:{type:'element',elementId:e.id,u:1,v:0});};
     el('context-fit').onclick=()=>{const e=this.board?.elements.find(e=>e.id===this.view.selected[0]);const height=Number(this.view.scene.querySelector(`[data-id="${e?.id}"] [data-fit-height]`)?.getAttribute('data-fit-height'));if(e&&Number.isFinite(height))void this.apply([{op:'resize',id:e.id,width:e.width,height}]);};
@@ -296,7 +315,7 @@ export class Editor {
     if(resolved==='undo'||resolved==='redo'){event.preventDefault();this.history(resolved);return;}
     if (command && event.code === 'KeyA') { event.preventDefault(); this.select(this.board?.elements.map(e => e.id) ?? []); return; }
     if (command && event.code === 'KeyD') { event.preventDefault(); if (this.view.selected.length) void this.apply([{ op: 'duplicate', ids: this.view.selected, dx: 40, dy: 40 }]); return; }
-    if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); if (this.view.selected.length) void this.apply([{ op: 'delete', ids: this.view.selected }]); return; }
+    if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); if (this.view.selected.length&&!this.interaction.gesture) void this.apply([{ op: 'delete', ids: this.view.selected }]); return; }
     if ((event.code === 'Space' || event.key === 'Enter') && document.activeElement?.closest('button,a,[contenteditable=true]')) return;
     if (event.code === 'Space') { event.preventDefault(); this.interaction.space = true; return; }
     if (event.key === 'Enter' && this.view.selected.length === 1) {event.preventDefault(); this.editText(this.view.selected[0]); return; }

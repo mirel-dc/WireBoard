@@ -31,6 +31,7 @@ export class CanvasView {
   private overlay=new OverlayRenderer(document.querySelector<SVGGElement>('#selection')!);
   private zoomAnimation=new ZoomAnimation();
   private connectorPreview:{board:Board;id:number;end:ConnectorEnd;point:Point;target:ConnectorTarget|null}|null=null;
+  private wire:{points:Point[];target:{element:Element;port:Point}|null}|null=null;
   private hover:number|null=null;private marqueeBounds:Bounds|null=null;private drop:number|null=null;private creation:{bounds:Bounds;kind:Kind}|null=null;private paintedZoom=0;
   constructor() { new ResizeObserver(() => this.updateCamera()).observe(this.svg); }
   setBoard(board: Board) { if(this.board?.id!==board.id){this.renderer.clear();this.board=null;this.hover=null;} this.svg.dataset.board = board.id; this.project(board); }
@@ -52,8 +53,22 @@ export class CanvasView {
     const rect = this.svg.getBoundingClientRect(); const zoom = Math.min(1.25, Math.max(.1, Math.min((rect.width - 100) / (right - x), (rect.height - 160) / (bottom - y)))); this.camera = { x: (rect.width - (right - x) * zoom) / 2 - x * zoom, y: (rect.height - (bottom - y) * zoom) / 2 - y * zoom, zoom }; this.updateCamera();
   }
   reveal(point:Point){this.zoomAnimation.stop();const rect=this.svg.getBoundingClientRect();this.camera={...this.camera,x:rect.width/2-point.x*this.camera.zoom,y:rect.height/2-point.y*this.camera.zoom};this.updateCamera();}
+  // Shifts the camera by the least amount that brings b fully into view with a 40px margin.
+  revealBounds(b:Bounds){
+    const rect=this.svg.getBoundingClientRect(),z=this.camera.zoom,m=40,left=this.camera.x+b.x*z,top=this.camera.y+b.y*z,right=left+b.width*z,bottom=top+b.height*z;
+    let dx=0,dy=0;if(right>rect.width-m)dx=right-(rect.width-m);if(left-dx<m)dx=left-m;if(bottom>rect.height-m)dy=bottom-(rect.height-m);if(top-dy<m)dy=top-m;
+    if(dx||dy){this.zoomAnimation.stop();this.pan(dx,dy);}
+  }
   setSelection(ids: number[]) { this.selected = ids.filter(id => this.board?.elements.some(e => e.id === id)); this.frames.invalidate('overlay'); }
   setHover(id:number|null){if(this.hover===id)return;this.hover=id;this.frames.invalidate('overlay');}
+  hovered():Element|null{const e=this.hover===null?null:this.board?.elements.find(e=>e.id===this.hover);return e?this.project(e):null;}
+  // The hovered block wins over a single selected one; any gesture, preview, open text editor or tool other than select hides the handles.
+  private connectSource():Element|null{
+    const board=this.board,tool=this.svg.dataset.tool;if(!board||tool&&tool!=='select'||this.editing!==null||this.selected.length>1||this.preview||this.resizePreview||this.marqueeBounds||this.creation||this.connectorPreview||this.wire)return null;
+    const usable=(e:Element|undefined)=>!!e&&['rectangle','text','image'].includes(e.kind);
+    const hover=this.hover===null?undefined:board.elements.find(e=>e.id===this.hover);if(usable(hover))return this.project(hover!);
+    const selected=this.selected.length===1?board.elements.find(e=>e.id===this.selected[0]):undefined;return usable(selected)?this.project(selected!):null;
+  }
   // The edited object hides its SVG text and selection; previewTextHeight survives clearPreview so a window blur keeps the grown block.
   setEditing(id:number|null){if(this.editing===id)return;const ids=[this.editing,id].filter((v):v is number=>v!==null);this.editing=id;this.editingHeight=null;this.renderer.editing=id;this.previewChanged(ids);}
   previewTextHeight(height:number|null){if(this.editing===null||this.editingHeight===height)return;this.editingHeight=height;this.previewChanged([this.editing]);this.frames.invalidate('chrome');}
@@ -74,12 +89,13 @@ export class CanvasView {
     this.frames.invalidate('scene',dirty==='all'?undefined:dirty);this.frames.invalidate('overlay');this.frames.invalidate('pins');
   }
   previewConnector(board:Board,id:number,end:ConnectorEnd,point:Point,target:ConnectorTarget|null){this.connectorPreview={board,id,end,point,target};this.previewChanged([]);}
+  previewWire(points:Point[],target:{element:Element;port:Point}|null){this.wire={points,target};this.frames.invalidate('overlay');}
   previewMove(ids: number[], dx: number, dy: number) { const previous=this.preview?.ids??[];this.preview = { ids, dx, dy };this.previewChanged([...previous,...ids]); }
   previewResize(id:number,width:number,height:number,x=this.board!.elements.find(e=>e.id===id)!.x,y=this.board!.elements.find(e=>e.id===id)!.y){const previous=this.resizePreview?[this.resizePreview.id]:[];this.resizePreview={id,width,height,x,y};this.previewChanged([...previous,id]);}
   highlightDrop(frameId:number|null){if(this.drop===frameId)return;this.drop=frameId;this.frames.invalidate('overlay');}
   previewCreate(bounds:Bounds,kind:Kind){this.creation={bounds,kind};this.frames.invalidate('overlay');}
   marquee(x: number, y: number, width: number, height: number) { this.marqueeBounds={x,y,width,height};this.frames.invalidate('overlay'); }
-  clearPreview() { const ids=[...(this.preview?.ids??[]),...(this.resizePreview?[this.resizePreview.id]:[])];this.preview = null;this.resizePreview=null;this.connectorPreview=null;this.creation=null;this.marqueeBounds=null;this.previewChanged(ids); }
+  clearPreview() { const ids=[...(this.preview?.ids??[]),...(this.resizePreview?[this.resizePreview.id]:[])];this.preview = null;this.resizePreview=null;this.connectorPreview=null;this.creation=null;this.marqueeBounds=null;this.wire=null;this.previewChanged(ids); }
   elementAt(target: EventTarget | null): Element | undefined { const id = (target as globalThis.Element | null)?.closest?.('[data-id]')?.getAttribute('data-id'); return this.board?.elements.find(e => e.id === Number(id)); }
   private previewChanged(ids:number[]){this.frames.invalidate('scene',ids);this.frames.invalidate('overlay');this.frames.invalidate('pins');}
   private linkPoints(e:Element){const p=this.connectorPreview;if(p?.id===e.id){const link=p.board.elements.find(n=>n.id===e.id)!;return connectorPreviewPoints(p.board,link,p.end,p.point,p.target);}return this.board?connectorPoints(this.board,e,n=>this.project(n)):[];}
@@ -107,7 +123,7 @@ export class CanvasView {
     let connectorTarget=null;const p=this.connectorPreview,target=p?.target?p.board.elements.find(n=>n.id===p.target!.id):undefined;
     if(p&&target){const points=this.linkPoints(p.board.elements.find(n=>n.id===p.id)!),port=p.end==='from'?points[0]:points.at(-1);if(port)connectorTarget={element:target,port};}
     const hover=find(this.hover),showHover=hover&&hover.id!==this.editing&&!this.selected.includes(hover.id)&&!this.preview&&!this.resizePreview;
-    this.overlay.render({selected,connectorEnds,hover:showHover?this.project(hover):null,marquee:this.marqueeBounds,drop:find(this.drop),create:this.creation,connectorTarget,zoom:this.camera.zoom});
+    this.overlay.render({selected,connectorEnds,hover:showHover?this.project(hover):null,marquee:this.marqueeBounds,drop:find(this.drop),create:this.creation,connectorTarget:this.wire?.target??connectorTarget,wire:this.wire?.points??null,connect:this.connectSource(),zoom:this.camera.zoom});
     // style.css matches [data-selected='true'].
     for(const group of this.scene.querySelectorAll(':scope > [data-kind="connector"]')){if(this.selected.includes(Number(group.getAttribute('data-id'))))group.setAttribute('data-selected','true');else group.removeAttribute('data-selected');}
   }

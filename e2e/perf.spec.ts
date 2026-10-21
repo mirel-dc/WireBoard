@@ -44,4 +44,11 @@ test.describe('smoothness budget on 300 elements',()=>{
     const handlers=await page.evaluate(()=>(window as unknown as {inputs:number[]}).inputs);
     expect(handlers.length).toBeGreaterThan(20);expect(typing.length).toBeGreaterThan(5);expect(p90(handlers)+p90(typing)).toBeLessThanOrEqual(FRAME_BUDGET_MS);
   });
+  test('hovering_blocks_and_dragging_a_connector_stay_within_the_frame_budget',async({page})=>{
+    await bigBoard(page);const b=await box(page),away={x:b.x+b.width+150,y:b.y+b.height/2};
+    const hover=await frames(page,async()=>{for(let i=0;i<30;i++)await page.mouse.move(i%2?away.x:b.x+b.width/2,i%2?away.y:b.y+b.height/2);});
+    await page.mouse.move(b.x+b.width/2,b.y+b.height/2);const dot=await bounding(page.locator('[data-connect="1"][data-side="right"]'));
+    const drag=await frames(page,async()=>{await page.mouse.move(dot.x+dot.width/2,dot.y+dot.height/2);await page.mouse.down();for(let i=1;i<=30;i++)await page.mouse.move(dot.x+dot.width/2+i*8,dot.y+dot.height/2+i*5);await page.keyboard.press('Escape');await page.mouse.up();});
+    for(const [name,values]of Object.entries({hover,drag})){expect(values.length,name).toBeGreaterThan(5);expect(p90(values),name).toBeLessThanOrEqual(FRAME_BUDGET_MS);}
+  });
 });
